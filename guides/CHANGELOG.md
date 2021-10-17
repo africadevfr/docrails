@@ -1,9 +1,16 @@
-## Rails 4.0.0 (unreleased) ##
+## Rails 7.0.0.alpha2 (September 15, 2021) ##
 
-*   Split Validations and Callbacks guide into two. *Steve Klabnik*
+*   No changes.
 
-*   New guide _Working with JavaScript in Rails_. *Steve Klabnik*
 
-*   Guides updated to reflect new test locations. *Mike Moore*
+## Rails 7.0.0.alpha1 (September 15, 2021) ##
 
-*   Guides have a responsive design. *Joe Fiorini*
+*   The autoloading guide for `zeitwerk` mode has been revised.
+
+    *Xavier Noria*
+
+*   The autoloading guide for `classic` mode has been deleted.
+
+    *Xavier Noria*
+
+Please check [6-1-stable](https://github.com/rails/rails/blob/6-1-stable/guides/CHANGELOG.md) for previous changes.

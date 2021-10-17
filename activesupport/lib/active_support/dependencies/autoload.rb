@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require "active_support/inflector/methods"
 
 module ActiveSupport
@@ -34,7 +36,7 @@ module ActiveSupport
 
     def autoload(const_name, path = @_at_path)
       unless path
-        full = [name, @_under_path, const_name.to_s, path].compact.join("::")
+        full = [name, @_under_path, const_name.to_s].compact.join("::")
         path = Inflector.underscore(full)
       end
 
@@ -67,7 +69,7 @@ module ActiveSupport
     end
 
     def eager_load!
-      @_autoloads.values.each { |file| require file }
+      @_autoloads.each_value { |file| require file }
     end
 
     def autoloads

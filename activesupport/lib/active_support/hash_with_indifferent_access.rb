@@ -1,4 +1,9 @@
-require 'active_support/core_ext/hash/keys'
+# frozen_string_literal: true
+
+require "active_support/core_ext/hash/keys"
+require "active_support/core_ext/hash/reverse_merge"
+require "active_support/core_ext/hash/except"
+require "active_support/core_ext/hash/slice"
 
 module ActiveSupport
   # Implements a hash where keys <tt>:foo</tt> and <tt>"foo"</tt> are considered
@@ -39,6 +44,12 @@ module ActiveSupport
   #   rgb = { black: '#000000', white: '#FFFFFF' }.with_indifferent_access
   #
   # which may be handy.
+  #
+  # To access this class outside of Rails, require the core extension with:
+  #
+  #   require "active_support/core_ext/hash/indifferent_access"
+  #
+  # which will, in turn, require this file.
   class HashWithIndifferentAccess < Hash
     # Returns +true+ so that <tt>Array#extract_options!</tt> finds members of
     # this class.
@@ -54,31 +65,23 @@ module ActiveSupport
       self
     end
 
-    def initialize(constructor = {})
-      if constructor.is_a?(Hash)
+    def initialize(constructor = nil)
+      if constructor.respond_to?(:to_hash)
         super()
         update(constructor)
+
+        hash = constructor.is_a?(Hash) ? constructor : constructor.to_hash
+        self.default = hash.default if hash.default
+        self.default_proc = hash.default_proc if hash.default_proc
+      elsif constructor.nil?
+        super()
       else
         super(constructor)
       end
     end
 
-    def default(key = nil)
-      if key.is_a?(Symbol) && include?(key = key.to_s)
-        self[key]
-      else
-        super
-      end
-    end
-
-    def self.new_from_hash_copying_default(hash)
-      new(hash).tap do |new_hash|
-        new_hash.default = hash.default
-      end
-    end
-
     def self.[](*args)
-      new.merge(Hash[*args])
+      new.merge!(Hash[*args])
     end
 
     alias_method :regular_writer, :[]= unless method_defined?(:regular_writer)
@@ -89,14 +92,14 @@ module ActiveSupport
     #   hash = ActiveSupport::HashWithIndifferentAccess.new
     #   hash[:key] = 'value'
     #
-    # This value can be later fetched using either +:key+ or +'key'+.
+    # This value can be later fetched using either +:key+ or <tt>'key'</tt>.
     def []=(key, value)
-      regular_writer(convert_key(key), convert_value(value))
+      regular_writer(convert_key(key), convert_value(value, conversion: :assignment))
     end
 
     alias_method :store, :[]=
 
-    # Updates the receiver in-place, merging in the hash passed as argument:
+    # Updates the receiver in-place, merging in the hashes passed as arguments:
     #
     #   hash_1 = ActiveSupport::HashWithIndifferentAccess.new
     #   hash_1[:key] = 'value'
@@ -106,11 +109,14 @@ module ActiveSupport
     #
     #   hash_1.update(hash_2) # => {"key"=>"New Value!"}
     #
-    # The argument can be either an
+    #   hash = ActiveSupport::HashWithIndifferentAccess.new
+    #   hash.update({ "a" => 1 }, { "b" => 2 }) # => { "a" => 1, "b" => 2 }
+    #
+    # The arguments can be either an
     # <tt>ActiveSupport::HashWithIndifferentAccess</tt> or a regular +Hash+.
     # In either case the merge respects the semantics of indifferent access.
     #
-    # If the argument is a regular hash with keys +:key+ and +"key"+ only one
+    # If the argument is a regular hash with keys +:key+ and <tt>"key"</tt> only one
     # of the values end up in the receiver, but which one is unspecified.
     #
     # When given a block, the value for duplicated keys will be determined
@@ -121,18 +127,15 @@ module ActiveSupport
     #   hash_1[:key] = 10
     #   hash_2['key'] = 12
     #   hash_1.update(hash_2) { |key, old, new| old + new } # => {"key"=>22}
-    def update(other_hash)
-      if other_hash.is_a? HashWithIndifferentAccess
-        super(other_hash)
+    def update(*other_hashes, &block)
+      if other_hashes.size == 1
+        update_with_single_argument(other_hashes.first, block)
       else
-        other_hash.each_pair do |key, value|
-          if block_given? && key?(key)
-            value = yield(convert_key(key), self[key], value)
-          end
-          regular_writer(convert_key(key), convert_value(value))
+        other_hashes.each do |other_hash|
+          update_with_single_argument(other_hash, block)
         end
-        self
       end
+      self
     end
 
     alias_method :merge!, :update
@@ -151,6 +154,32 @@ module ActiveSupport
     alias_method :has_key?, :key?
     alias_method :member?, :key?
 
+    # Same as <tt>Hash#[]</tt> where the key passed as argument can be
+    # either a string or a symbol:
+    #
+    #   counters = ActiveSupport::HashWithIndifferentAccess.new
+    #   counters[:foo] = 1
+    #
+    #   counters['foo'] # => 1
+    #   counters[:foo]  # => 1
+    #   counters[:zoo]  # => nil
+    def [](key)
+      super(convert_key(key))
+    end
+
+    # Same as <tt>Hash#assoc</tt> where the key passed as argument can be
+    # either a string or a symbol:
+    #
+    #   counters = ActiveSupport::HashWithIndifferentAccess.new
+    #   counters[:foo] = 1
+    #
+    #   counters.assoc('foo') # => ["foo", 1]
+    #   counters.assoc(:foo)  # => ["foo", 1]
+    #   counters.assoc(:zoo)  # => nil
+    def assoc(key)
+      super(convert_key(key))
+    end
+
     # Same as <tt>Hash#fetch</tt> where the key passed as argument can be
     # either a string or a symbol:
     #
@@ -159,10 +188,38 @@ module ActiveSupport
     #
     #   counters.fetch('foo')          # => 1
     #   counters.fetch(:bar, 0)        # => 0
-    #   counters.fetch(:bar) {|key| 0} # => 0
+    #   counters.fetch(:bar) { |key| 0 } # => 0
     #   counters.fetch(:zoo)           # => KeyError: key not found: "zoo"
     def fetch(key, *extras)
       super(convert_key(key), *extras)
+    end
+
+    # Same as <tt>Hash#dig</tt> where the key passed as argument can be
+    # either a string or a symbol:
+    #
+    #   counters = ActiveSupport::HashWithIndifferentAccess.new
+    #   counters[:foo] = { bar: 1 }
+    #
+    #   counters.dig('foo', 'bar')     # => 1
+    #   counters.dig(:foo, :bar)       # => 1
+    #   counters.dig(:zoo)             # => nil
+    def dig(*args)
+      args[0] = convert_key(args[0]) if args.size > 0
+      super(*args)
+    end
+
+    # Same as <tt>Hash#default</tt> where the key passed as argument can be
+    # either a string or a symbol:
+    #
+    #   hash = ActiveSupport::HashWithIndifferentAccess.new(1)
+    #   hash.default                   # => 1
+    #
+    #   hash = ActiveSupport::HashWithIndifferentAccess.new { |hash, key| key }
+    #   hash.default                   # => nil
+    #   hash.default('foo')            # => 'foo'
+    #   hash.default(:foo)             # => 'foo'
+    def default(*args)
+      super(*args.map { |arg| convert_key(arg) })
     end
 
     # Returns an array of the values at the specified indices:
@@ -171,22 +228,42 @@ module ActiveSupport
     #   hash[:a] = 'x'
     #   hash[:b] = 'y'
     #   hash.values_at('a', 'b') # => ["x", "y"]
-    def values_at(*indices)
-      indices.collect {|key| self[convert_key(key)]}
+    def values_at(*keys)
+      super(*keys.map { |key| convert_key(key) })
     end
 
-    # Returns an exact copy of the hash.
+    # Returns an array of the values at the specified indices, but also
+    # raises an exception when one of the keys can't be found.
+    #
+    #   hash = ActiveSupport::HashWithIndifferentAccess.new
+    #   hash[:a] = 'x'
+    #   hash[:b] = 'y'
+    #   hash.fetch_values('a', 'b') # => ["x", "y"]
+    #   hash.fetch_values('a', 'c') { |key| 'z' } # => ["x", "z"]
+    #   hash.fetch_values('a', 'c') # => KeyError: key not found: "c"
+    def fetch_values(*indices, &block)
+      super(*indices.map { |key| convert_key(key) }, &block)
+    end
+
+    # Returns a shallow copy of the hash.
+    #
+    #   hash = ActiveSupport::HashWithIndifferentAccess.new({ a: { b: 'b' } })
+    #   dup  = hash.dup
+    #   dup[:a][:c] = 'c'
+    #
+    #   hash[:a][:c] # => "c"
+    #   dup[:a][:c]  # => "c"
     def dup
       self.class.new(self).tap do |new_hash|
-        new_hash.default = default
+        set_defaults(new_hash)
       end
     end
 
     # This method has the same semantics of +update+, except it does not
     # modify the receiver but rather returns a new hash with indifferent
     # access with the result of the merge.
-    def merge(hash, &block)
-      self.dup.update(hash, &block)
+    def merge(*hashes, &block)
+      dup.update(*hashes, &block)
     end
 
     # Like +merge+ but the other way around: Merges the receiver into the
@@ -196,20 +273,22 @@ module ActiveSupport
     #   hash['a'] = nil
     #   hash.reverse_merge(a: 0, b: 1) # => {"a"=>nil, "b"=>1}
     def reverse_merge(other_hash)
-      super(self.class.new_from_hash_copying_default(other_hash))
+      super(self.class.new(other_hash))
     end
+    alias_method :with_defaults, :reverse_merge
 
     # Same semantics as +reverse_merge+ but modifies the receiver in-place.
     def reverse_merge!(other_hash)
-      replace(reverse_merge( other_hash ))
+      super(self.class.new(other_hash))
     end
+    alias_method :with_defaults!, :reverse_merge!
 
     # Replaces the contents of this hash with other_hash.
     #
     #   h = { "a" => 100, "b" => 200 }
-    #   h.replace({ "c" => 300, "d" => 400 }) #=> {"c"=>300, "d"=>400}
+    #   h.replace({ "c" => 300, "d" => 400 }) # => {"c"=>300, "d"=>400}
     def replace(other_hash)
-      super(self.class.new_from_hash_copying_default(other_hash))
+      super(self.class.new(other_hash))
     end
 
     # Removes the specified key from the hash.
@@ -217,37 +296,130 @@ module ActiveSupport
       super(convert_key(key))
     end
 
+    # Returns a hash with indifferent access that includes everything except given keys.
+    #   hash = { a: "x", b: "y", c: 10 }.with_indifferent_access
+    #   hash.except(:a, "b") # => {c: 10}.with_indifferent_access
+    #   hash                 # => { a: "x", b: "y", c: 10 }.with_indifferent_access
+    def except(*keys)
+      slice(*self.keys - keys.map { |key| convert_key(key) })
+    end
+    alias_method :without, :except
+
     def stringify_keys!; self end
     def deep_stringify_keys!; self end
     def stringify_keys; dup end
     def deep_stringify_keys; dup end
     undef :symbolize_keys!
     undef :deep_symbolize_keys!
-    def symbolize_keys; to_hash.symbolize_keys end
-    def deep_symbolize_keys; to_hash.deep_symbolize_keys end
+    def symbolize_keys; to_hash.symbolize_keys! end
+    alias_method :to_options, :symbolize_keys
+    def deep_symbolize_keys; to_hash.deep_symbolize_keys! end
     def to_options!; self end
+
+    def select(*args, &block)
+      return to_enum(:select) unless block_given?
+      dup.tap { |hash| hash.select!(*args, &block) }
+    end
+
+    def reject(*args, &block)
+      return to_enum(:reject) unless block_given?
+      dup.tap { |hash| hash.reject!(*args, &block) }
+    end
+
+    def transform_values(*args, &block)
+      return to_enum(:transform_values) unless block_given?
+      dup.tap { |hash| hash.transform_values!(*args, &block) }
+    end
+
+    def transform_keys(*args, &block)
+      return to_enum(:transform_keys) unless block_given?
+      dup.tap { |hash| hash.transform_keys!(*args, &block) }
+    end
+
+    def transform_keys!
+      return enum_for(:transform_keys!) { size } unless block_given?
+      keys.each do |key|
+        self[yield(key)] = delete(key)
+      end
+      self
+    end
+
+    def slice(*keys)
+      keys.map! { |key| convert_key(key) }
+      self.class.new(super)
+    end
+
+    def slice!(*keys)
+      keys.map! { |key| convert_key(key) }
+      super
+    end
+
+    def compact
+      dup.tap(&:compact!)
+    end
 
     # Convert to a regular hash with string keys.
     def to_hash
-      Hash.new(default).merge!(self)
+      _new_hash = Hash.new
+      set_defaults(_new_hash)
+
+      each do |key, value|
+        _new_hash[key] = convert_value(value, conversion: :to_hash)
+      end
+      _new_hash
     end
 
-    protected
-      def convert_key(key)
-        key.kind_of?(Symbol) ? key.to_s : key
+    private
+      if Symbol.method_defined?(:name)
+        def convert_key(key)
+          key.kind_of?(Symbol) ? key.name : key
+        end
+      else
+        def convert_key(key)
+          key.kind_of?(Symbol) ? key.to_s : key
+        end
       end
 
-      def convert_value(value)
+      def convert_value(value, conversion: nil)
         if value.is_a? Hash
-          value.nested_under_indifferent_access
+          if conversion == :to_hash
+            value.to_hash
+          else
+            value.nested_under_indifferent_access
+          end
         elsif value.is_a?(Array)
-          value = value.dup if value.frozen?
-          value.map! { |e| convert_value(e) }
+          if conversion != :assignment || value.frozen?
+            value = value.dup
+          end
+          value.map! { |e| convert_value(e, conversion: conversion) }
         else
           value
         end
       end
+
+      def set_defaults(target)
+        if default_proc
+          target.default_proc = default_proc.dup
+        else
+          target.default = default
+        end
+      end
+
+      def update_with_single_argument(other_hash, block)
+        if other_hash.is_a? HashWithIndifferentAccess
+          regular_update(other_hash, &block)
+        else
+          other_hash.to_hash.each_pair do |key, value|
+            if block && key?(key)
+              value = block.call(convert_key(key), self[key], value)
+            end
+            regular_writer(convert_key(key), convert_value(value))
+          end
+        end
+      end
   end
 end
+
+# :stopdoc:
 
 HashWithIndifferentAccess = ActiveSupport::HashWithIndifferentAccess

@@ -1,4 +1,4 @@
-require 'uri'
+# frozen_string_literal: true
 
 module ActionDispatch
   module Journey # :nodoc:
@@ -7,46 +7,96 @@ module ActionDispatch
         # Normalizes URI path.
         #
         # Strips off trailing slash and ensures there is a leading slash.
+        # Also converts downcase URL encoded string to uppercase.
         #
         #   normalize_path("/foo")  # => "/foo"
         #   normalize_path("/foo/") # => "/foo"
         #   normalize_path("foo")   # => "/foo"
         #   normalize_path("")      # => "/"
+        #   normalize_path("/%ab")  # => "/%AB"
         def self.normalize_path(path)
-          path = "/#{path}"
-          path.squeeze!('/')
-          path.sub!(%r{/+\Z}, '')
-          path = '/' if path == ''
-          path
+          path ||= ""
+          encoding = path.encoding
+          path = +"/#{path}"
+          path.squeeze!("/")
+
+          unless path == "/"
+            path.delete_suffix!("/")
+            path.gsub!(/(%[a-f0-9]{2})/) { $1.upcase }
+          end
+
+          path.force_encoding(encoding)
         end
 
         # URI path and fragment escaping
-        # http://tools.ietf.org/html/rfc3986
-        module UriEscape # :nodoc:
-          # Symbol captures can generate multiple path segments, so include /.
-          reserved_segment  = '/'
-          reserved_fragment = '/?'
-          reserved_pchar    = ':@&=+$,;%'
+        # https://tools.ietf.org/html/rfc3986
+        class UriEncoder # :nodoc:
+          ENCODE   = "%%%02X"
+          US_ASCII = Encoding::US_ASCII
+          UTF_8    = Encoding::UTF_8
+          EMPTY    = (+"").force_encoding(US_ASCII).freeze
+          DEC2HEX  = (0..255).map { |i| (ENCODE % i).force_encoding(US_ASCII) }
 
-          safe_pchar    = "#{URI::REGEXP::PATTERN::UNRESERVED}#{reserved_pchar}"
-          safe_segment  = "#{safe_pchar}#{reserved_segment}"
-          safe_fragment = "#{safe_pchar}#{reserved_fragment}"
-          UNSAFE_SEGMENT  = Regexp.new("[^#{safe_segment}]", false).freeze
-          UNSAFE_FRAGMENT = Regexp.new("[^#{safe_fragment}]", false).freeze
+          ALPHA = "a-zA-Z"
+          DIGIT = "0-9"
+          UNRESERVED = "#{ALPHA}#{DIGIT}\\-\\._~"
+          SUB_DELIMS = "!\\$&'\\(\\)\\*\\+,;="
+
+          ESCAPED  = /%[a-zA-Z0-9]{2}/.freeze
+
+          FRAGMENT = /[^#{UNRESERVED}#{SUB_DELIMS}:@\/?]/.freeze
+          SEGMENT  = /[^#{UNRESERVED}#{SUB_DELIMS}:@]/.freeze
+          PATH     = /[^#{UNRESERVED}#{SUB_DELIMS}:@\/]/.freeze
+
+          def escape_fragment(fragment)
+            escape(fragment, FRAGMENT)
+          end
+
+          def escape_path(path)
+            escape(path, PATH)
+          end
+
+          def escape_segment(segment)
+            escape(segment, SEGMENT)
+          end
+
+          def unescape_uri(uri)
+            encoding = uri.encoding == US_ASCII ? UTF_8 : uri.encoding
+            uri.gsub(ESCAPED) { |match| [match[1, 2].hex].pack("C") }.force_encoding(encoding)
+          end
+
+          private
+            def escape(component, pattern)
+              component.gsub(pattern) { |unsafe| percent_encode(unsafe) }.force_encoding(US_ASCII)
+            end
+
+            def percent_encode(unsafe)
+              safe = EMPTY.dup
+              unsafe.each_byte { |b| safe << DEC2HEX[b] }
+              safe
+            end
         end
 
-        Parser = URI.const_defined?(:Parser) ? URI::Parser.new : URI
+        ENCODER = UriEncoder.new
 
         def self.escape_path(path)
-          Parser.escape(path.to_s, UriEscape::UNSAFE_SEGMENT)
+          ENCODER.escape_path(path.to_s)
+        end
+
+        def self.escape_segment(segment)
+          ENCODER.escape_segment(segment.to_s)
         end
 
         def self.escape_fragment(fragment)
-          Parser.escape(fragment.to_s, UriEscape::UNSAFE_FRAGMENT)
+          ENCODER.escape_fragment(fragment.to_s)
         end
 
+        # Replaces any escaped sequences with their unescaped representations.
+        #
+        #   uri = "/topics?title=Ruby%20on%20Rails"
+        #   unescape_uri(uri)  #=> "/topics?title=Ruby on Rails"
         def self.unescape_uri(uri)
-          Parser.unescape(uri)
+          ENCODER.unescape_uri(uri)
         end
       end
     end

@@ -1,161 +1,182 @@
-## Rails 4.0.0 (unreleased) ##
+## Unreleased
 
-*   Quote column names in generates fixture files. This prevents
-    conflicts with reserved YAML keywords such as 'yes' and 'no'
-    Fix #8612
+*   Scaffolds now use date_field, time_field and datetime_field instead of
+    date_select, time_select and datetime_select; thus providing native date/time pickers.
 
-    *Yves Senn*
+    *Martijn Lafeber*
 
-*   Explicit options have precedence over `~/.railsrc` on the `rails new` command.
+*   Fix a regression in which autoload paths were initialized too late.
+
+    *Xavier Noria*
+
+## Rails 7.0.0.alpha2 (September 15, 2021) ##
+
+*   Fix activestorage dependency in the npm package.
 
     *Rafael Mendonça França*
 
-*   Generated migrations now always use the `change` method.
+## Rails 7.0.0.alpha1 (September 15, 2021) ##
 
-    *Marc-André Lafortune*
+*   New and upgraded Rails apps no longer generate `config/initializers/application_controller_renderer.rb`
+    or `config/initializers/cookies_serializer.rb`
 
-*   Add `app/models/concerns` and `app/controllers/concerns` to the default directory structure and load path.
-    See http://37signals.com/svn/posts/3372-put-chubby-models-on-a-diet-with-concerns for usage instructions.
+    The default value for `cookies_serializer` (`:json`) has been moved to `config.load_defaults("7.0")`.
+    The new framework defaults file can be used to upgrade the serializer.
 
-    *DHH*
+    *Alex Ghiculescu*
 
-*   The `rails/info/routes` now correctly formats routing output as an html table.
+*   New applications get a dependency on the new `debug` gem, replacing `byebug`.
 
-    *Richard Schneeman*
+    *Xavier Noria*
 
-*   The `public/index.html` is no longer generated for new projects.
-    Page is replaced by internal `welcome_controller` inside of railties.
+*   Add SSL support for postgresql in `bin/rails dbconsole`.
 
-    *Richard Schneeman*
+    Fixes #43114.
 
-*   Add `ENV['RACK_ENV']` support to `rails runner/console/server`.
+    *Michael Bayucot*
 
-    *kennyj*
+*   Add support for comments above gem declaration in Rails application templates, e.g. `gem("nokogiri", comment: "For XML")`.
 
-*   Add `db` to list of folders included by `rake notes` and `rake notes:custom`. *Antonio Cangiano*
+    *Linas Juškevičius*
 
-*   Engines with a dummy app include the rake tasks of dependencies in the app namespace.
-    Fix #8229
+*   The setter `config.autoloader=` has been deleted. `zeitwerk` is the only
+    available autoloading mode.
 
-    *Yves Senn*
+    *Xavier Noria*
 
-*   Add `sqlserver.yml` template file to satisfy `-d sqlserver` being passed to `rails new`.
-    Fix #6882
+*   `config.autoload_once_paths` can be configured in the body of the
+    application class defined in `config/application.rb` or in the configuration
+    for environments in `config/environments/*`.
 
-    *Robert Nesius*
+    Similarly, engines can configure that collection in the class body of the
+    engine class or in the configuration for environments.
 
-*   Rake test:uncommitted finds git directory in ancestors *Nicolas Despres*
+    After that, the collection is frozen, and you can autoload from those paths.
+    They are managed by the `Rails.autoloaders.once` autoloader, which does not
+    reload, only autoloads/eager loads.
 
-*   Add dummy app Rake tasks when `--skip-test-unit` and `--dummy-path` is passed to the plugin generator.
-    Fix #8121
+    *Xavier Noria*
 
-    *Yves Senn*
+*   During initialization, you cannot autoload reloadable classes or modules
+    like application models, unless they are wrapped in a `to_prepare` block.
+    For example, from `config/initializers/*`, or in application, engines, or
+    railties initializers.
 
-*   Add `.rake` to list of file extensions included by `rake notes` and `rake notes:custom`. *Brent J. Nordquist*
+    Please check the [autoloading
+    guide](https://guides.rubyonrails.org/v7.0/autoloading_and_reloading_constants.html#autoloading-when-the-application-boots)
+    for details.
 
-*   New test locations `test/models`, `test/helpers`, `test/controllers`, and
-    `test/mailers`. Corresponding rake tasks added as well. *Mike Moore*
+    *Xavier Noria*
 
-*   Set a different cache per environment for assets pipeline
-    through `config.assets.cache`.
+*   While they are allowed to have elements in common, it is no longer required
+    that `config.autoload_once_paths` is a subset of `config.autoload_paths`.
+    The former are managed by the `once` autoloader. The `main` autoloader
+    manages the latter minus the former.
 
-    *Guillermo Iguaran*
+    *Xavier Noria*
 
-*   `Rails.public_path` now returns a Pathname object. *Prem Sichanugrist*
+*   Show Rake task description if command is run with `-h`.
 
-*   Remove highly uncommon `config.assets.manifest` option for moving the manifest path.
-    This option is now unsupported in sprockets-rails.
+    Adding `-h` (or `--help`) to a Rails command that's a Rake task now outputs
+    the task description instead of the general Rake help.
 
-    *Guillermo Iguaran & Dmitry Vorotilin*
+    *Petrik de Heus*
 
-*   Add `config.action_controller.permit_all_parameters` to disable
-    StrongParameters protection, it's false by default.
+*   Add missing `plugin new` command to help.
 
-    *Guillermo Iguaran*
+    *Petrik de Heus
 
-*   Remove `config.active_record.whitelist_attributes` and
-    `config.active_record.mass_assignment_sanitizer` from new applications since
-    MassAssignmentSecurity has been extracted from Rails.
+*   Fix `config_for` error when there's only a shared root array.
 
-    *Guillermo Iguaran*
+    *Loïc Delmaire*
 
-*   Change `rails new` and `rails plugin new` generators to name the `.gitkeep` files
-    as `.keep` in a more SCM-agnostic way.
+*   Raise an error in generators if an index type is invalid.
 
-    Change `--skip-git` option to only skip the `.gitignore` file and still generate
-    the `.keep` files.
+    *Petrik de Heus*
 
-    Add `--skip-keeps` option to skip the `.keep` files.
+*   `package.json` now uses a strict version constraint for Rails JavaScript packages on new Rails apps.
 
-    *Derek Prior & Francesco Rodriguez*
+    *Zachary Scott*, *Alex Ghiculescu*
 
-*   Fixed support for DATABASE_URL environment variable for rake db tasks. *Grace Liu*
+*   Modified scaffold generator template so that running
+    `rails g scaffold Author` no longer generates tests called "creating
+    a Author", "updating a Author", and "destroying a Author".
 
-*   rails dbconsole now can use SSL for MySQL. The database.yml options sslca, sslcert, sslcapath, sslcipher,
-    and sslkey now affect rails dbconsole. *Jim Kingdon and Lars Petrus*
+    Fixes #40744.
 
-*   Correctly handle SCRIPT_NAME when generating routes to engine in application
-    that's mounted at a sub-uri. With this behavior, you *should not* use
-    default_url_options[:script_name] to set proper application's mount point by
-    yourself. *Piotr Sarnacki*
+    *Michael Duchemin*
 
-*   `config.threadsafe!` is deprecated in favor of `config.eager_load` which provides a more fine grained control on what is eager loaded *José Valim*
+*   Raise an error in generators if a field type is invalid.
 
-*   The migration generator will now produce AddXXXToYYY/RemoveXXXFromYYY migrations with references statements, for instance
+    *Petrik de Heus*
 
-        rails g migration AddReferencesToProducts user:references supplier:references{polymorphic}
+*   `bin/rails tmp:clear` deletes also files and directories in `tmp/storage`.
 
-    will generate the migration with:
+    *George Claghorn*
 
-        add_reference :products, :user, index: true
-        add_reference :products, :supplier, polymorphic: true, index: true
+*   Fix compatibility with `psych >= 4`.
 
-    *Aleksey Magusev*
+    Starting in Psych 4.0.0 `YAML.load` behaves like `YAML.safe_load`. To preserve compatibility
+    `Rails.application.config_for` now uses `YAML.unsafe_load` if available.
 
-*   Allow scaffold/model/migration generators to accept a `polymorphic` modifier
-    for `references`/`belongs_to`, for instance
+    *Jean Boussier*
 
-        rails g model Product supplier:references{polymorphic}
+*   Allow loading nested locales in engines.
 
-    will generate the model with `belongs_to :supplier, polymorphic: true`
-    association and appropriate migration.
+    *Gannon McGibbon*
 
-    *Aleksey Magusev*
+*   Ensure `Rails.application.config_for` always cast hashes to `ActiveSupport::OrderedOptions`.
 
-*   Set `config.active_record.migration_error` to `:page_load` for development *Richard Schneeman*
+    *Jean Boussier*
 
-*   Add runner to Rails::Railtie as a hook called just after runner starts. *José Valim & kennyj*
+*   Remove `Rack::Runtime` from the default middleware stack and deprecate
+    referencing it in middleware operations without adding it back.
 
-*   Add `/rails/info/routes` path, displays same information as `rake routes` *Richard Schneeman & Andrew White*
+    *Hartley McGuire*
 
-*   Improved `rake routes` output for redirects *Łukasz Strzałkowski & Andrew White*
+*   Allow adding additional authorized hosts in development via `ENV['RAILS_DEVELOPMENT_HOSTS']`.
 
-*   Load all environments available in `config.paths["config/environments"]`. *Piotr Sarnacki*
+    *Josh Abernathy*, *Debbie Milburn*
 
-*   Remove Rack::SSL in favour of ActionDispatch::SSL. *Rafael Mendonça França*
+*   Add app concern and test keepfiles to generated engine plugins.
 
-*   Remove Active Resource from Rails framework. *Prem Sichangrist*
+    *Gannon McGibbon*
 
-*   Allow to set class that will be used to run as a console, other than IRB, with `Rails.application.config.console=`. It's best to add it to `console` block. *Piotr Sarnacki*
+*   Stop generating a license for in-app plugins.
 
-    Example:
+    *Gannon McGibbon*
 
-        # it can be added to config/application.rb
-        console do
-          # this block is called only when running console,
-          # so we can safely require pry here
-          require "pry"
-          config.console = Pry
+*   `rails app:update` no longer prompts you to overwrite files that are generally modified in the
+    course of developing a Rails app. See [#41083](https://github.com/rails/rails/pull/41083) for
+    the full list of changes.
+
+    *Alex Ghiculescu*
+
+*   Change default branch for new Rails projects and plugins to `main`.
+
+    *Prateek Choudhary*
+
+*   The new method `Rails.benchmark` gives you a quick way to measure and log the execution time taken by a block:
+
+        def test_expensive_stuff
+          Rails.benchmark("test_expensive_stuff") { ... }
         end
 
-*   Add convenience `hide!` method to Rails generators to hide current generator
-    namespace from showing when running `rails generate`. *Carlos Antonio da Silva*
+    This functionality was available in some contexts only before.
 
-*   Scaffold now uses `content_tag_for` in index.html.erb *José Valim*
+    *Simon Perepelitsa*
 
-*   Rails::Plugin has gone. Instead of adding plugins to vendor/plugins use gems or bundler with path or git dependencies. *Santiago Pastorino*
+*   Applications generated with `--skip-sprockets` no longer get `app/assets/config/manifest.js` and `app/assets/stylesheets/application.css`.
 
-*   Set config.action_mailer.async = true to turn on asynchronous
-    message delivery *Brian Cardarella*
+    *Cindy Gao*
 
-Please check [3-2-stable](https://github.com/rails/rails/blob/3-2-stable/railties/CHANGELOG.md) for previous changes.
+*   Add support for stylesheets and ERB views to `rails stats`.
+
+    *Joel Hawksley*
+
+*   Allow appended root routes to take precedence over internal welcome controller.
+
+    *Gannon McGibbon*
+
+
+Please check [6-1-stable](https://github.com/rails/rails/blob/6-1-stable/railties/CHANGELOG.md) for previous changes.

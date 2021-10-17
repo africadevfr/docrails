@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 module ActionDispatch
   module Journey # :nodoc:
     # The Routing table. Contains all routes for a system. Routes can be
@@ -5,23 +7,27 @@ module ActionDispatch
     class Routes # :nodoc:
       include Enumerable
 
-      attr_reader :routes, :named_routes
+      attr_reader :routes, :custom_routes, :anchored_routes
 
       def initialize
         @routes             = []
-        @named_routes       = {}
         @ast                = nil
-        @partitioned_routes = nil
+        @anchored_routes    = []
+        @custom_routes      = []
         @simulator          = nil
       end
 
+      def empty?
+        routes.empty?
+      end
+
       def length
-        @routes.length
+        routes.length
       end
       alias :size :length
 
       def last
-        @routes.last
+        routes.last
       end
 
       def each(&block)
@@ -30,45 +36,43 @@ module ActionDispatch
 
       def clear
         routes.clear
+        anchored_routes.clear
+        custom_routes.clear
       end
 
-      def partitioned_routes
-        @partitioned_routes ||= routes.partition { |r|
-          r.path.anchored && r.ast.grep(Nodes::Symbol).all? { |n| n.default_regexp?  }
-        }
+      def partition_route(route)
+        if route.path.anchored && route.path.requirements_anchored?
+          anchored_routes << route
+        else
+          custom_routes << route
+        end
       end
 
       def ast
-        return @ast if @ast
-        return if partitioned_routes.first.empty?
-
-        asts = partitioned_routes.first.map { |r| r.ast }
-        @ast = Nodes::Or.new(asts)
+        @ast ||= begin
+          nodes = anchored_routes.map(&:ast)
+          Nodes::Or.new(nodes)
+        end
       end
 
       def simulator
-        return @simulator if @simulator
-
-        gtg = GTG::Builder.new(ast).transition_table
-        @simulator = GTG::Simulator.new(gtg)
+        @simulator ||= begin
+          gtg = GTG::Builder.new(ast).transition_table
+          GTG::Simulator.new(gtg)
+        end
       end
 
-      # Add a route to the routing table.
-      def add_route(app, path, conditions, defaults, name = nil)
-        route = Route.new(name, app, path, conditions, defaults)
-
-        route.precedence = routes.length
+      def add_route(name, mapping)
+        route = mapping.make_route name, routes.length
         routes << route
-        named_routes[name] = route if name && !named_routes[name]
+        partition_route(route)
         clear_cache!
         route
       end
 
       private
-
         def clear_cache!
           @ast                = nil
-          @partitioned_routes = nil
           @simulator          = nil
         end
     end

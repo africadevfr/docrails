@@ -1,4 +1,4 @@
-require 'active_support/deprecation/method_wrappers'
+# frozen_string_literal: true
 
 class Module
   #   deprecate :foo
@@ -14,9 +14,9 @@ class Module
   # method where you can implement your custom warning behavior.
   #
   #   class MyLib::Deprecator
-  #     def deprecation_warning(deprecated_method_name, message, caller_backtrace)
-  #        message = "#{method_name} is deprecated and will be removed from MyLibrary | #{message}"
-  #        Kernel.warn message
+  #     def deprecation_warning(deprecated_method_name, message, caller_backtrace = nil)
+  #       message = "#{deprecated_method_name} is deprecated and will be removed from MyLibrary | #{message}"
+  #       Kernel.warn message
   #     end
   #   end
   def deprecate(*method_names)

@@ -1,123 +1,78 @@
-## Rails 4.0.0 (unreleased) ##
+*   Clear secure password cache if password is set to `nil`
 
-*   Add `ActiveModel::Validations::AbsenceValidator`, a validator to check the
-    absence of attributes.
+    Before:
 
-        class Person
-          include ActiveModel::Validations
+       user.password = 'something'
+       user.password = nil
 
-          attr_accessor :first_name
-          validates_absence_of :first_name
-        end
+       user.password # => 'something'
 
-        person = Person.new
-        person.first_name = "John"
-        person.valid?
-        # => false
-        person.errors.messages
-        # => {:first_name=>["must be blank"]}
+    Now:
 
-    *Roberto Vasquez Angel*
+       user.password = 'something'
+       user.password = nil
 
-*   `[attribute]_changed?` now returns `false` after a call to `reset_[attribute]!`
+       user.password # => nil
 
-    *Renato Mascarenhas*
+    *Markus Doits*
 
-*   Observers was extracted from Active Model as `rails-observers` gem.
+## Rails 7.0.0.alpha2 (September 15, 2021) ##
 
-    *Rafael Mendonça França*
+*   No changes.
 
-*   Specify type of singular association during serialization *Steve Klabnik*
 
-*   Fixed length validator to correctly handle nil values. Fixes #7180.
+## Rails 7.0.0.alpha1 (September 15, 2021) ##
 
-    *Michal Zima*
+*   Introduce `ActiveModel::API`.
 
-*   Removed dispensable `require` statements. Make sure to require `active_model` before requiring
-    individual parts of the framework.
+    Make `ActiveModel::API` the minimum API to talk with Action Pack and Action View.
+    This will allow adding more functionality to `ActiveModel::Model`.
 
-    *Yves Senn*
+    *Petrik de Heus*, *Nathaniel Watts*
 
-*   Use BCrypt's `MIN_COST` in the test environment for speedier tests when using `has_secure_pasword`.
+*   Fix dirty check for Float::NaN and BigDecimal::NaN.
 
-    *Brian Cardarella + Jeremy Kemper + Trevor Turk*
+    Float::NaN and BigDecimal::NaN in Ruby are [special values](https://bugs.ruby-lang.org/issues/1720) 
+    and can't be compared with `==`.
 
-*   Add `ActiveModel::ForbiddenAttributesProtection`, a simple module to
-    protect attributes from mass assignment when non-permitted attributes are passed.
+    *Marcelo Lauxen*
 
-    *DHH + Guillermo Iguaran*
+*   Fix `to_json` for `ActiveModel::Dirty` object.
 
-*   `ActiveModel::MassAssignmentSecurity` has been extracted from Active Model and the
-    `protected_attributes` gem should be added to Gemfile in order to use
-    `attr_accessible` and `attr_protected` macros in your models.
+    Exclude `mutations_from_database` attribute from json as it lead to recursion.
 
-    *Guillermo Iguaran*
+    *Anil Maurya*
 
-*   Due to a change in builder, nil values and empty strings now generates
-    closed tags, so instead of this:
+*   Add `ActiveModel::AttributeSet#values_for_database`.
 
-        <pseudonyms nil=\"true\"></pseudonyms>
+    Returns attributes with values for assignment to the database.
 
-    It generates this:
+    *Chris Salzberg*
 
-        <pseudonyms nil=\"true\"/>
+*   Fix delegation in ActiveModel::Type::Registry#lookup and ActiveModel::Type.lookup.
 
-    *Carlos Antonio da Silva*
+    Passing a last positional argument `{}` would be incorrectly considered as keyword argument.
 
-*   Changed inclusion and exclusion validators to accept a symbol for `:in` option.
+    *Benoit Daloze*
 
-    This allows to use dynamic inclusion/exclusion values using methods, besides the current lambda/proc support.
+*   Cache and re-use generated attribute methods.
 
-    *Gabriel Sobrinho*
+    Generated methods with identical implementations will now share their instruction sequences
+    leading to reduced memory retention, and slightly faster load time.
 
-*   `AM::Validation#validates` ability to pass custom exception to `:strict` option.
+    *Jean Boussier*
 
-    *Bogdan Gusiev*
+*   Add `in: range`  parameter to `numericality` validator.
 
-*   Changed `ActiveModel::Serializers::Xml::Serializer#add_associations` to by default
-    propagate `:skip_types, :dasherize, :camelize` keys to included associations.
-    It can be overriden on each association by explicitly specifying the option on one
-    or more associations
+    *Michal Papis*
 
-    *Anthony Alberto*
+*   Add `locale` argument to `ActiveModel::Name#initialize` to be used to generate the `singular`,
+   `plural`, `route_key` and `singular_route_key` values.
 
-*   Changed `AM::Serializers::JSON.include_root_in_json' default value to false.
-    Now, AM Serializers and AR objects have the same default behaviour. Fixes #6578.
+    *Lukas Pokorny*
 
-        class User < ActiveRecord::Base; end
+*   Make ActiveModel::Errors#inspect slimmer for readability
 
-        class Person
-          include ActiveModel::Model
-          include ActiveModel::AttributeMethods
-          include ActiveModel::Serializers::JSON
+    *lulalala*
 
-          attr_accessor :name, :age
-
-          def attributes
-            instance_values
-          end
-        end
-
-        user.as_json
-        => {"id"=>1, "name"=>"Konata Izumi", "age"=>16, "awesome"=>true}
-        # root is not included
-
-        person.as_json
-        => {"name"=>"Francesco", "age"=>22}
-        # root is not included
-
-    *Francesco Rodriguez*
-
-*   Passing false hash values to `validates` will no longer enable the corresponding validators *Steve Purcell*
-
-*   `ConfirmationValidator` error messages will attach to `:#{attribute}_confirmation` instead of `attribute` *Brian Cardarella*
-
-*   Added ActiveModel::Model, a mixin to make Ruby objects work with AP out of box *Guillermo Iguaran*
-
-*   `AM::Errors#to_json`: support `:full_messages` parameter *Bogdan Gusiev*
-
-*   Trim down Active Model API by removing `valid?` and `errors.full_messages` *José Valim*
-
-*   When `^` or `$` are used in the regular expression provided to `validates_format_of` and the :multiline option is not set to true, an exception will be raised. This is to prevent security vulnerabilities when using `validates_format_of`. The problem is described in detail in the Rails security guide *Jan Berdajs + Egor Homakov*
-
-Please check [3-2-stable](https://github.com/rails/rails/blob/3-2-stable/activemodel/CHANGELOG.md) for previous changes.
+Please check [6-1-stable](https://github.com/rails/rails/blob/6-1-stable/activemodel/CHANGELOG.md) for previous changes.

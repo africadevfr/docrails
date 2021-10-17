@@ -1,33 +1,43 @@
-require 'action_dispatch/routing/inspector'
+# frozen_string_literal: true
 
-class Rails::InfoController < ActionController::Base # :nodoc:
-  self.view_paths = File.expand_path('../templates', __FILE__)
-  prepend_view_path ActionDispatch::DebugExceptions::RESCUES_TEMPLATE_PATH
-  layout 'application'
+require "rails/application_controller"
+require "action_dispatch/routing/inspector"
 
-  before_filter :require_local!
+class Rails::InfoController < Rails::ApplicationController # :nodoc:
+  prepend_view_path ActionDispatch::DebugView::RESCUES_TEMPLATE_PATH
+  layout -> { request.xhr? ? false : "application" }
+
+  before_action :require_local!
 
   def index
-    redirect_to '/rails/info/routes'
+    redirect_to action: :routes
   end
 
   def properties
     @info = Rails::Info.to_html
+    @page_title = "Properties"
   end
 
   def routes
-    @routes = ActionDispatch::Routing::RoutesInspector.new.collect_routes(_routes.routes)
-  end
-
-  protected
-
-  def require_local!
-    unless local_request?
-      render text: '<p>For security purposes, this information is only available to local requests.</p>', status: :forbidden
+    if path = params[:path]
+      path = URI::DEFAULT_PARSER.escape path
+      normalized_path = with_leading_slash path
+      render json: {
+        exact: match_route { |it| it.match normalized_path },
+        fuzzy: match_route { |it| it.spec.to_s.match path }
+      }
+    else
+      @routes_inspector = ActionDispatch::Routing::RoutesInspector.new(_routes.routes)
+      @page_title = "Routes"
     end
   end
 
-  def local_request?
-    Rails.application.config.consider_all_requests_local || request.local?
-  end
+  private
+    def match_route
+      _routes.routes.filter_map { |route| route.path.spec.to_s if yield route.path }
+    end
+
+    def with_leading_slash(path)
+      ("/" + path).squeeze("/")
+    end
 end

@@ -1,10 +1,20 @@
-require 'active_support/core_ext/kernel/singleton_class'
-require 'active_support/core_ext/module/remove_method'
-require 'active_support/core_ext/array/extract_options'
+# frozen_string_literal: true
+
+require "active_support/core_ext/module/redefine_method"
 
 class Class
   # Declare a class-level attribute whose value is inheritable by subclasses.
   # Subclasses can change their own value and it will not impact parent class.
+  #
+  # ==== Options
+  #
+  # * <tt>:instance_reader</tt> - Sets the instance reader method (defaults to true).
+  # * <tt>:instance_writer</tt> - Sets the instance writer method (defaults to true).
+  # * <tt>:instance_accessor</tt> - Sets both instance methods (defaults to true).
+  # * <tt>:instance_predicate</tt> - Sets a predicate method (defaults to true).
+  # * <tt>:default</tt> - Sets a default value for the attribute (defaults to nil).
+  #
+  # ==== Examples
   #
   #   class Base
   #     class_attribute :setting
@@ -20,14 +30,14 @@ class Class
   #   Base.setting                # => true
   #
   # In the above case as long as Subclass does not assign a value to setting
-  # by performing <tt>Subclass.setting = _something_ </tt>, <tt>Subclass.setting</tt>
+  # by performing <tt>Subclass.setting = _something_</tt>, <tt>Subclass.setting</tt>
   # would read value assigned to parent class. Once Subclass assigns a value then
   # the value assigned by Subclass would be returned.
   #
   # This matches normal Ruby method inheritance: think of writing an attribute
   # on a subclass as overriding the reader method. However, you need to be aware
   # when using +class_attribute+ with mutable structures as +Array+ or +Hash+.
-  # In such cases, you don't want to do changes in places but use setters:
+  # In such cases, you don't want to do changes in place. Instead use setters:
   #
   #   Base.setting = []
   #   Base.setting                # => []
@@ -44,7 +54,8 @@ class Class
   #   Base.setting               # => []
   #   Subclass.setting           # => [:foo]
   #
-  # For convenience, a query method is defined as well:
+  # For convenience, an instance predicate method is defined as well.
+  # To skip it, pass <tt>instance_predicate: false</tt>.
   #
   #   Subclass.setting?       # => false
   #
@@ -67,55 +78,54 @@ class Class
   #   object.setting = false  # => NoMethodError
   #
   # To opt out of both instance methods, pass <tt>instance_accessor: false</tt>.
-  def class_attribute(*attrs)
-    options = attrs.extract_options!
-    # double assignment is used to avoid "assigned but unused variable" warning
-    instance_reader = instance_reader = options.fetch(:instance_accessor, true) && options.fetch(:instance_reader, true)
-    instance_writer = options.fetch(:instance_accessor, true) && options.fetch(:instance_writer, true)
+  #
+  # To set a default value for the attribute, pass <tt>default:</tt>, like so:
+  #
+  #   class_attribute :settings, default: {}
+  def class_attribute(*attrs, instance_accessor: true,
+    instance_reader: instance_accessor, instance_writer: instance_accessor, instance_predicate: true, default: nil)
 
-    # We use class_eval here rather than define_method because class_attribute
-    # may be used in a performance sensitive context therefore the overhead that
-    # define_method introduces may become significant.
+    class_methods, methods = [], []
     attrs.each do |name|
-      class_eval <<-RUBY, __FILE__, __LINE__ + 1
-        def self.#{name}() nil end
-        def self.#{name}?() !!#{name} end
+      unless name.is_a?(Symbol) || name.is_a?(String)
+        raise TypeError, "#{name.inspect} is not a symbol nor a string"
+      end
 
-        def self.#{name}=(val)
-          singleton_class.class_eval do
-            remove_possible_method(:#{name})
-            define_method(:#{name}) { val }
-          end
-
-          if singleton_class?
-            class_eval do
-              remove_possible_method(:#{name})
-              def #{name}
-                defined?(@#{name}) ? @#{name} : singleton_class.#{name}
-              end
-            end
-          end
-          val
-        end
-
-        if instance_reader
-          remove_possible_method :#{name}
-          def #{name}
-            defined?(@#{name}) ? @#{name} : self.class.#{name}
-          end
-
-          def #{name}?
-            !!#{name}
-          end
+      class_methods << <<~RUBY # In case the method exists and is not public
+        silence_redefinition_of_method def #{name}
         end
       RUBY
 
-      attr_writer name if instance_writer
-    end
-  end
+      methods << <<~RUBY if instance_reader
+        silence_redefinition_of_method def #{name}
+          defined?(@#{name}) ? @#{name} : self.class.#{name}
+        end
+      RUBY
 
-  private
-    def singleton_class?
-      ancestors.first != self
+      class_methods << <<~RUBY
+        silence_redefinition_of_method def #{name}=(value)
+          redefine_method(:#{name}) { value } if singleton_class?
+          redefine_singleton_method(:#{name}) { value }
+          value
+        end
+      RUBY
+
+      methods << <<~RUBY if instance_writer
+        silence_redefinition_of_method(:#{name}=)
+        attr_writer :#{name}
+      RUBY
+
+      if instance_predicate
+        class_methods << "silence_redefinition_of_method def #{name}?; !!self.#{name}; end"
+        if instance_reader
+          methods << "silence_redefinition_of_method def #{name}?; !!self.#{name}; end"
+        end
+      end
     end
+
+    location = caller_locations(1, 1).first
+    class_eval(["class << self", *class_methods, "end", *methods].join(";").tr("\n", ";"), location.path, location.lineno)
+
+    attrs.each { |name| public_send("#{name}=", default) }
+  end
 end

@@ -1,6 +1,8 @@
-require 'abstract_controller/collector'
-require 'active_support/core_ext/hash/reverse_merge'
-require 'active_support/core_ext/array/extract_options'
+# frozen_string_literal: true
+
+require "abstract_controller/collector"
+require "active_support/core_ext/hash/reverse_merge"
+require "active_support/core_ext/array/extract_options"
 
 module ActionMailer
   class Collector
@@ -20,7 +22,7 @@ module ActionMailer
     end
     alias :all :any
 
-    def custom(mime, options={})
+    def custom(mime, options = {})
       options.reverse_merge!(content_type: mime.to_s)
       @context.formats = [mime.to_sym]
       options[:body] = block_given? ? yield : @default_render.call

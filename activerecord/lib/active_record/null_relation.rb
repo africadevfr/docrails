@@ -1,20 +1,16 @@
-# -*- coding: utf-8 -*-
+# frozen_string_literal: true
 
 module ActiveRecord
   module NullRelation # :nodoc:
-    def exec_queries
-      @records = []
-    end
-
-    def pluck(_column_name)
+    def pluck(*column_names)
       []
     end
 
-    def delete_all(_conditions = nil)
+    def delete_all
       0
     end
 
-    def update_all(_updates, _conditions = nil, _options = {})
+    def update_all(_updates)
       0
     end
 
@@ -22,11 +18,11 @@ module ActiveRecord
       0
     end
 
-    def size
-      0
+    def empty?
+      true
     end
 
-    def empty?
+    def none?
       true
     end
 
@@ -34,32 +30,34 @@ module ActiveRecord
       false
     end
 
+    def one?
+      false
+    end
+
     def many?
       false
     end
 
-    def to_sql
-      @to_sql ||= ""
+    def calculate(operation, _column_name)
+      case operation
+      when :count, :sum
+        group_values.any? ? Hash.new : 0
+      when :average, :minimum, :maximum
+        group_values.any? ? Hash.new : nil
+      end
     end
 
-    def where_values_hash
-      {}
-    end
-
-    def count(*)
-      0
-    end
-
-    def sum(*)
-      0
-    end
-
-    def calculate(_operation, _column_name, _options = {})
-      nil
-    end
-
-    def exists?(_id = false)
+    def exists?(_conditions = :none)
       false
     end
+
+    def or(other)
+      other.spawn
+    end
+
+    private
+      def exec_main_query(async: false)
+        [].freeze
+      end
   end
 end

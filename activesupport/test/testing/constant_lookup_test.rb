@@ -1,11 +1,12 @@
-require 'abstract_unit'
+# frozen_string_literal: true
+
+require_relative "../abstract_unit"
 
 class Foo; end
 class Bar < Foo
   def index; end
   def self.index; end
 end
-class Baz < Bar; end
 module FooBar; end
 
 class ConstantLookupTest < ActiveSupport::TestCase
@@ -55,5 +56,16 @@ class ConstantLookupTest < ActiveSupport::TestCase
     assert_nil find_module("DoesntExist::Nadda")
     assert_nil find_module("DoesntExist::Nadda::Nope")
     assert_nil find_module("DoesntExist::Nadda::Nope::NotHere")
+  end
+
+  def test_does_not_shallow_ordinary_exceptions
+    test_name = "RaisesNameError"
+    file_name = File.expand_path("../autoloading_fixtures/raises_no_method_error.rb", __dir__)
+    assert_raises(NameError) do
+      Object.autoload(test_name, file_name)
+      self.class.determine_constant_from_test_name(test_name)
+    end
+  ensure
+    Object.send(:remove_const, test_name)
   end
 end

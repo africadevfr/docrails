@@ -1,14 +1,18 @@
 <!DOCTYPE html>
 <html>
-<head>
-  <title><%= camelized %></title>
-  <%%= stylesheet_link_tag    "application", media: "all", "data-turbolinks-track" => true %>
-  <%%= javascript_include_tag "application", "data-turbolinks-track" => true %>
-  <%%= csrf_meta_tags %>
-</head>
-<body>
+  <head>
+    <title><%= camelized %></title>
+    <%%= csrf_meta_tags %>
+    <%%= csp_meta_tag %>
 
-<%%= yield %>
+    <%- if options[:skip_hotwire] || options[:skip_javascript] -%>
+    <%%= stylesheet_link_tag "application" %>
+    <%- else -%>
+    <%%= stylesheet_link_tag "application", "data-turbo-track": "reload" %>
+    <%- end -%>
+  </head>
 
-</body>
+  <body>
+    <%%= yield %>
+  </body>
 </html>

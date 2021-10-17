@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 module ActionDispatch
   module Http
     # Models uploaded files.
@@ -6,7 +8,7 @@ module ActionDispatch
     # of its interface is available directly for convenience.
     #
     # Uploaded files are temporary files whose lifespan is one request. When
-    # the object is finalized Ruby unlinks the file, so there is not need to
+    # the object is finalized Ruby unlinks the file, so there is no need to
     # clean them with a separate maintenance task.
     class UploadedFile
       # The basename of the file in the client.
@@ -19,20 +21,31 @@ module ActionDispatch
       # its interface is available directly.
       attr_accessor :tempfile
 
-      # TODO.
+      # A string with the headers of the multipart request.
       attr_accessor :headers
 
       def initialize(hash) # :nodoc:
-        @tempfile          = hash[:tempfile]
-        raise(ArgumentError, ':tempfile is required') unless @tempfile
+        @tempfile = hash[:tempfile]
+        raise(ArgumentError, ":tempfile is required") unless @tempfile
 
-        @original_filename = encode_filename(hash[:filename])
+        if hash[:filename]
+          @original_filename = hash[:filename].dup
+
+          begin
+            @original_filename.encode!(Encoding::UTF_8)
+          rescue EncodingError
+            @original_filename.force_encoding(Encoding::UTF_8)
+          end
+        else
+          @original_filename = nil
+        end
+
         @content_type      = hash[:type]
         @headers           = hash[:head]
       end
 
       # Shortcut for +tempfile.read+.
-      def read(length=nil, buffer=nil)
+      def read(length = nil, buffer = nil)
         @tempfile.read(length, buffer)
       end
 
@@ -42,13 +55,18 @@ module ActionDispatch
       end
 
       # Shortcut for +tempfile.close+.
-      def close(unlink_now=false)
+      def close(unlink_now = false)
         @tempfile.close(unlink_now)
       end
 
       # Shortcut for +tempfile.path+.
       def path
         @tempfile.path
+      end
+
+      # Shortcut for +tempfile.to_path+.
+      def to_path
+        @tempfile.to_path
       end
 
       # Shortcut for +tempfile.rewind+.
@@ -66,25 +84,9 @@ module ActionDispatch
         @tempfile.eof?
       end
 
-      private
-
-      def encode_filename(filename)
-        # Encode the filename in the utf8 encoding, unless it is nil
-        filename.force_encoding("UTF-8").encode! if filename
+      def to_io
+        @tempfile.to_io
       end
-    end
-
-    module Upload # :nodoc:
-      # Convert nested Hash to HashWithIndifferentAccess and replace
-      # file upload hash with UploadedFile objects
-      def normalize_parameters(value)
-        if Hash === value && value.has_key?(:tempfile)
-          UploadedFile.new(value)
-        else
-          super
-        end
-      end
-      private :normalize_parameters
     end
   end
 end

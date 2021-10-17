@@ -1,52 +1,57 @@
+# frozen_string_literal: true
+
+require "active_support/core_ext/enumerable"
+
 module ActiveRecord
   module Associations
     # Implements the details of eager loading of Active Record associations.
     #
-    # Note that 'eager loading' and 'preloading' are actually the same thing.
-    # However, there are two different eager loading strategies.
+    # Suppose that you have the following two Active Record models:
     #
-    # The first one is by using table joins. This was only strategy available
-    # prior to Rails 2.1. Suppose that you have an Author model with columns
-    # 'name' and 'age', and a Book model with columns 'name' and 'sales'. Using
-    # this strategy, Active Record would try to retrieve all data for an author
-    # and all of its books via a single query:
+    #   class Author < ActiveRecord::Base
+    #     # columns: name, age
+    #     has_many :books
+    #   end
     #
-    #   SELECT * FROM authors
-    #   LEFT OUTER JOIN books ON authors.id = books.author_id
-    #   WHERE authors.name = 'Ken Akamatsu'
+    #   class Book < ActiveRecord::Base
+    #     # columns: title, sales, author_id
+    #   end
     #
-    # However, this could result in many rows that contain redundant data. After
-    # having received the first row, we already have enough data to instantiate
-    # the Author object. In all subsequent rows, only the data for the joined
-    # 'books' table is useful; the joined 'authors' data is just redundant, and
-    # processing this redundant data takes memory and CPU time. The problem
-    # quickly becomes worse and worse as the level of eager loading increases
-    # (i.e. if Active Record is to eager load the associations' associations as
-    # well).
+    # When you load an author with all associated books Active Record will make
+    # multiple queries like this:
     #
-    # The second strategy is to use multiple database queries, one for each
-    # level of association. Since Rails 2.1, this is the default strategy. In
-    # situations where a table join is necessary (e.g. when the +:conditions+
-    # option references an association's column), it will fallback to the table
-    # join strategy.
-    class Preloader #:nodoc:
+    #   Author.includes(:books).where(name: ['bell hooks', 'Homer']).to_a
+    #
+    #   => SELECT `authors`.* FROM `authors` WHERE `name` IN ('bell hooks', 'Homer')
+    #   => SELECT `books`.* FROM `books` WHERE `author_id` IN (2, 5)
+    #
+    # Active Record saves the ids of the records from the first query to use in
+    # the second. Depending on the number of associations involved there can be
+    # arbitrarily many SQL queries made.
+    #
+    # However, if there is a WHERE clause that spans across tables Active
+    # Record will fall back to a slightly more resource-intensive single query:
+    #
+    #   Author.includes(:books).where(books: {title: 'Illiad'}).to_a
+    #   => SELECT `authors`.`id` AS t0_r0, `authors`.`name` AS t0_r1, `authors`.`age` AS t0_r2,
+    #             `books`.`id`   AS t1_r0, `books`.`title`  AS t1_r1, `books`.`sales` AS t1_r2
+    #      FROM `authors`
+    #      LEFT OUTER JOIN `books` ON `authors`.`id` =  `books`.`author_id`
+    #      WHERE `books`.`title` = 'Illiad'
+    #
+    # This could result in many rows that contain redundant data and it performs poorly at scale
+    # and is therefore only used when necessary.
+    class Preloader # :nodoc:
       extend ActiveSupport::Autoload
 
       eager_autoload do
-        autoload :Association,           'active_record/associations/preloader/association'
-        autoload :SingularAssociation,   'active_record/associations/preloader/singular_association'
-        autoload :CollectionAssociation, 'active_record/associations/preloader/collection_association'
-        autoload :ThroughAssociation,    'active_record/associations/preloader/through_association'
-
-        autoload :HasMany,             'active_record/associations/preloader/has_many'
-        autoload :HasManyThrough,      'active_record/associations/preloader/has_many_through'
-        autoload :HasOne,              'active_record/associations/preloader/has_one'
-        autoload :HasOneThrough,       'active_record/associations/preloader/has_one_through'
-        autoload :HasAndBelongsToMany, 'active_record/associations/preloader/has_and_belongs_to_many'
-        autoload :BelongsTo,           'active_record/associations/preloader/belongs_to'
+        autoload :Association,        "active_record/associations/preloader/association"
+        autoload :Batch,              "active_record/associations/preloader/batch"
+        autoload :Branch,             "active_record/associations/preloader/branch"
+        autoload :ThroughAssociation, "active_record/associations/preloader/through_association"
       end
 
-      attr_reader :records, :associations, :preload_scope, :model
+      attr_reader :records, :associations, :scope, :associate_by_default
 
       # Eager loads the named associations for the given Active Record record(s).
       #
@@ -58,7 +63,7 @@ module ActiveRecord
       # == Parameters
       # +records+ is an array of ActiveRecord::Base. This array needs not be flat,
       # i.e. +records+ itself may also contain arrays of records. In any case,
-      # +preload_associations+ will preload the all associations records by
+      # +preload_associations+ will preload all associations records by
       # flattening +records+.
       #
       # +associations+ specifies one or more associations that you want to
@@ -75,101 +80,62 @@ module ActiveRecord
       #   example, specifying <tt>{ author: :avatar }</tt> will preload a
       #   book's author, as well as that author's avatar.
       #
-      # +:associations+ has the same format as the +:include+ option for
-      # <tt>ActiveRecord::Base.find</tt>. So +associations+ could look like this:
+      # +:associations+ has the same format as the +:include+ method in
+      # <tt>ActiveRecord::QueryMethods</tt>. So +associations+ could look like this:
       #
       #   :books
       #   [ :books, :author ]
       #   { author: :avatar }
       #   [ :books, { author: :avatar } ]
-      def initialize(records, associations, preload_scope = nil)
-        @records       = Array.wrap(records).compact.uniq
-        @associations  = Array.wrap(associations)
-        @preload_scope = preload_scope || Relation.new(nil, nil)
-      end
-
-      def run
-        unless records.empty?
-          associations.each { |association| preload(association) }
-        end
-      end
-
-      private
-
-      def preload(association)
-        case association
-        when Hash
-          preload_hash(association)
-        when String, Symbol
-          preload_one(association.to_sym)
-        else
-          raise ArgumentError, "#{association.inspect} was not recognised for preload"
-        end
-      end
-
-      def preload_hash(association)
-        association.each do |parent, child|
-          Preloader.new(records, parent, preload_scope).run
-          Preloader.new(records.map { |record| record.send(parent) }.flatten, child).run
-        end
-      end
-
-      # Not all records have the same class, so group then preload group on the reflection
-      # itself so that if various subclass share the same association then we do not split
-      # them unnecessarily
       #
-      # Additionally, polymorphic belongs_to associations can have multiple associated
-      # classes, depending on the polymorphic_type field. So we group by the classes as
-      # well.
-      def preload_one(association)
-        grouped_records(association).each do |reflection, klasses|
-          klasses.each do |klass, records|
-            preloader_for(reflection).new(klass, records, reflection, preload_scope).run
-          end
-        end
-      end
-
-      def grouped_records(association)
-        Hash[
-          records_by_reflection(association).map do |reflection, records|
-            [reflection, records.group_by { |record| association_klass(reflection, record) }]
-          end
-        ]
-      end
-
-      def records_by_reflection(association)
-        records.group_by do |record|
-          reflection = record.class.reflections[association]
-
-          unless reflection
-            raise ActiveRecord::ConfigurationError, "Association named '#{association}' was not found; " \
-                                                    "perhaps you misspelled it?"
-          end
-
-          reflection
-        end
-      end
-
-      def association_klass(reflection, record)
-        if reflection.macro == :belongs_to && reflection.options[:polymorphic]
-          klass = record.send(reflection.foreign_type)
-          klass && klass.constantize
+      # +available_records+ is an array of ActiveRecord::Base. The Preloader
+      # will try to use the objects in this array to preload the requested
+      # associations before querying the database. This can save database
+      # queries by reusing in-memory objects. The optimization is only applied
+      # to single associations (i.e. :belongs_to, :has_one) with no scopes.
+      def initialize(associate_by_default: true, **kwargs)
+        if kwargs.empty?
+          ActiveSupport::Deprecation.warn("Calling `Preloader#initialize` without arguments is deprecated and will be removed in Rails 7.0.")
         else
-          reflection.klass
+          @records = kwargs[:records]
+          @associations = kwargs[:associations]
+          @scope = kwargs[:scope]
+          @available_records = kwargs[:available_records] || []
+          @associate_by_default = associate_by_default
+
+          @tree = Branch.new(
+            parent: nil,
+            association: nil,
+            children: associations,
+            associate_by_default: @associate_by_default,
+            scope: @scope
+          )
+          @tree.preloaded_records = records
         end
       end
 
-      def preloader_for(reflection)
-        case reflection.macro
-        when :has_many
-          reflection.options[:through] ? HasManyThrough : HasMany
-        when :has_one
-          reflection.options[:through] ? HasOneThrough : HasOne
-        when :has_and_belongs_to_many
-          HasAndBelongsToMany
-        when :belongs_to
-          BelongsTo
-        end
+      def empty?
+        associations.nil? || records.length == 0
+      end
+
+      def call
+        Batch.new([self], available_records: @available_records).call
+
+        loaders
+      end
+
+      def preload(records, associations, preload_scope = nil)
+        ActiveSupport::Deprecation.warn("`preload` is deprecated and will be removed in Rails 7.0. Call `Preloader.new(kwargs).call` instead.")
+
+        Preloader.new(records: records, associations: associations, scope: preload_scope).call
+      end
+
+      def branches
+        @tree.children
+      end
+
+      def loaders
+        branches.flat_map(&:loaders)
       end
     end
   end

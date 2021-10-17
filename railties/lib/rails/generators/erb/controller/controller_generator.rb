@@ -1,4 +1,6 @@
-require 'rails/generators/erb'
+# frozen_string_literal: true
+
+require "rails/generators/erb"
 
 module Erb # :nodoc:
   module Generators # :nodoc:
@@ -11,8 +13,10 @@ module Erb # :nodoc:
 
         actions.each do |action|
           @action = action
-          @path = File.join(base_path, filename_with_extensions(action))
-          template filename_with_extensions(:view), @path
+          formats.each do |format|
+            @path = File.join(base_path, filename_with_extensions(action, format))
+            template filename_with_extensions(:view, format), @path
+          end
         end
       end
     end

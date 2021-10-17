@@ -1,9 +1,83 @@
-require 'active_support/concern'
-require 'thread'
-require 'thread_safe'
+# frozen_string_literal: true
+
+require "mutex_m"
+require "active_support/core_ext/module/delegation"
 
 module ActiveRecord
   module Delegation # :nodoc:
+    module DelegateCache # :nodoc:
+      def relation_delegate_class(klass)
+        @relation_delegate_cache[klass]
+      end
+
+      def initialize_relation_delegate_cache
+        @relation_delegate_cache = cache = {}
+        [
+          ActiveRecord::Relation,
+          ActiveRecord::Associations::CollectionProxy,
+          ActiveRecord::AssociationRelation,
+          ActiveRecord::DisableJoinsAssociationRelation
+        ].each do |klass|
+          delegate = Class.new(klass) {
+            include ClassSpecificRelation
+          }
+          include_relation_methods(delegate)
+          mangled_name = klass.name.gsub("::", "_")
+          const_set mangled_name, delegate
+          private_constant mangled_name
+
+          cache[klass] = delegate
+        end
+      end
+
+      def inherited(child_class)
+        child_class.initialize_relation_delegate_cache
+        super
+      end
+
+      def generate_relation_method(method)
+        generated_relation_methods.generate_method(method)
+      end
+
+      protected
+        def include_relation_methods(delegate)
+          superclass.include_relation_methods(delegate) unless base_class?
+          delegate.include generated_relation_methods
+        end
+
+      private
+        def generated_relation_methods
+          @generated_relation_methods ||= GeneratedRelationMethods.new.tap do |mod|
+            const_set(:GeneratedRelationMethods, mod)
+            private_constant :GeneratedRelationMethods
+          end
+        end
+    end
+
+    class GeneratedRelationMethods < Module # :nodoc:
+      include Mutex_m
+
+      def generate_method(method)
+        synchronize do
+          return if method_defined?(method)
+
+          if /\A[a-zA-Z_]\w*[!?]?\z/.match?(method) && !DELEGATION_RESERVED_METHOD_NAMES.include?(method.to_s)
+            module_eval <<-RUBY, __FILE__, __LINE__ + 1
+              def #{method}(...)
+                scoping { klass.#{method}(...) }
+              end
+            RUBY
+          else
+            define_method(method) do |*args, &block|
+              scoping { klass.public_send(method, *args, &block) }
+            end
+            ruby2_keywords(method)
+          end
+        end
+      end
+    end
+    private_constant :GeneratedRelationMethods
+
     extend ActiveSupport::Concern
 
     # This module creates compiled delegation methods dynamically at runtime, which makes
@@ -11,118 +85,48 @@ module ActiveRecord
     # may vary depending on the klass of a relation, so we create a subclass of Relation
     # for each different klass, and the delegations are compiled into that subclass only.
 
-    delegate :to_xml, :to_yaml, :length, :collect, :map, :each, :all?, :include?, :to_ary, :to => :to_a
-    delegate :table_name, :quoted_table_name, :primary_key, :quoted_primary_key,
-             :connection, :columns_hash, :auto_explain_threshold_in_seconds, :to => :klass
+    delegate :to_xml, :encode_with, :length, :each, :join,
+             :[], :&, :|, :+, :-, :sample, :reverse, :rotate, :compact, :in_groups, :in_groups_of,
+             :to_sentence, :to_formatted_s, :as_json,
+             :shuffle, :split, :slice, :index, :rindex, to: :records
 
-    module ClassSpecificRelation
+    delegate :primary_key, :connection, to: :klass
+
+    module ClassSpecificRelation # :nodoc:
       extend ActiveSupport::Concern
 
-      included do
-        @delegation_mutex = Mutex.new
-      end
-
-      module ClassMethods
+      module ClassMethods # :nodoc:
         def name
           superclass.name
         end
-
-        def delegate_to_scoped_klass(method)
-          @delegation_mutex.synchronize do
-            return if method_defined?(method)
-
-            if method.to_s =~ /\A[a-zA-Z_]\w*[!?]?\z/
-              module_eval <<-RUBY, __FILE__, __LINE__ + 1
-                def #{method}(*args, &block)
-                  scoping { @klass.#{method}(*args, &block) }
-                end
-              RUBY
-            else
-              module_eval <<-RUBY, __FILE__, __LINE__ + 1
-                def #{method}(*args, &block)
-                  scoping { @klass.send(#{method.inspect}, *args, &block) }
-                end
-              RUBY
-            end
-          end
-        end
-
-        def delegate(method, opts = {})
-          @delegation_mutex.synchronize do
-            return if method_defined?(method)
-            super
-          end
-        end
-      end
-
-      protected
-
-      def method_missing(method, *args, &block)
-        if @klass.respond_to?(method)
-          self.class.delegate_to_scoped_klass(method)
-          scoping { @klass.send(method, *args, &block) }
-        elsif Array.method_defined?(method)
-          self.class.delegate method, :to => :to_a
-          to_a.send(method, *args, &block)
-        elsif arel.respond_to?(method)
-          self.class.delegate method, :to => :arel
-          arel.send(method, *args, &block)
-        else
-          super
-        end
-      end
-    end
-
-    module ClassMethods
-      @@subclasses = ThreadSafe::Cache.new(:initial_capacity => 2)
-
-      def new(klass, *args)
-        relation = relation_class_for(klass).allocate
-        relation.__send__(:initialize, klass, *args)
-        relation
-      end
-
-      # This doesn't have to be thread-safe. relation_class_for guarantees that this will only be
-      # called exactly once for a given const name.
-      def const_missing(name)
-        const_set(name, Class.new(self) { include ClassSpecificRelation })
       end
 
       private
-      # Cache the constants in @@subclasses because looking them up via const_get
-      # make instantiation significantly slower.
-      def relation_class_for(klass)
-        if klass && (klass_name = klass.name)
-          my_cache = @@subclasses.compute_if_absent(self) { ThreadSafe::Cache.new }
-          # This hash is keyed by klass.name to avoid memory leaks in development mode
-          my_cache.compute_if_absent(klass_name) do
-            # Cache#compute_if_absent guarantees that the block will only executed once for the given klass_name
-            const_get("#{name.gsub('::', '_')}_#{klass_name.gsub('::', '_')}", false)
+        def method_missing(method, *args, &block)
+          if @klass.respond_to?(method)
+            @klass.generate_relation_method(method)
+            scoping { @klass.public_send(method, *args, &block) }
+          else
+            super
           end
-        else
-          ActiveRecord::Relation
         end
+        ruby2_keywords(:method_missing)
+    end
+
+    module ClassMethods # :nodoc:
+      def create(klass, *args, **kwargs)
+        relation_class_for(klass).new(klass, *args, **kwargs)
       end
+
+      private
+        def relation_class_for(klass)
+          klass.relation_delegate_class(self)
+        end
     end
 
-    def respond_to?(method, include_private = false)
-      super || Array.method_defined?(method) ||
-        @klass.respond_to?(method, include_private) ||
-        arel.respond_to?(method, include_private)
-    end
-
-    protected
-
-    def method_missing(method, *args, &block)
-      if @klass.respond_to?(method)
-        scoping { @klass.send(method, *args, &block) }
-      elsif Array.method_defined?(method)
-        to_a.send(method, *args, &block)
-      elsif arel.respond_to?(method)
-        arel.send(method, *args, &block)
-      else
-        super
+    private
+      def respond_to_missing?(method, _)
+        super || @klass.respond_to?(method)
       end
-    end
   end
 end

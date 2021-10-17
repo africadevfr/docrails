@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 module Rails
   module Generators
     class GeneratorGenerator < NamedBase # :nodoc:
@@ -7,11 +9,12 @@ module Rails
                                desc: "Namespace generator under lib/generators/name"
 
       def create_generator_files
-        directory '.', generator_dir
+        directory ".", generator_dir
       end
 
-      protected
+      hook_for :test_framework
 
+      private
         def generator_dir
           if options[:namespace]
             File.join("lib", "generators", regular_class_path, file_name)
@@ -19,7 +22,6 @@ module Rails
             File.join("lib", "generators", regular_class_path)
           end
         end
-
     end
   end
 end

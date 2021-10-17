@@ -1,794 +1,278 @@
-## Rails 4.0.0 (unreleased) ##
+*   Allow Capybara driver name overrides in `SystemTestCase::driven_by`
 
-*   Do not append `charset=` parameter when `head` is called with a
-    `:content_type` option.
-    Fix #8661.
+    Allow users to prevent conflicts among drivers that use the same driver
+    type (selenium, poltergeist, webkit, rack test).
 
-    *Yves Senn*
+    Fixes #42502
 
-*   Added `Mime::NullType` class. This  allows to use html?, xml?, json?..etc when
-    the `format` of `request` is unknown, without raise an exception.
+    *Chris LaRose*
 
-    *Angelo Capilleri*
+*   Allow multiline to be passed in routes when using wildcard segments.
 
-*   Integrate the Journey gem into Action Dispatch so that the global namespace
-    is not polluted with names that may be used as models.
+    Previously routes with newlines weren't detected when using wildcard segments, returning
+    a `No route matches` error.
+    After this change, routes with newlines are detected on wildcard segments. Example
 
-    *Andrew White*
+    ```ruby
+      draw do
+        get "/wildcard/*wildcard_segment", to: SimpleApp.new("foo#index"), as: :wildcard
+      end
 
-*   Extract support for email address obfuscation via `:encode`, `:replace_at`, and `replace_dot`
-    options from the `mail_to` helper into the `actionview-encoded_mail_to` gem.
+      # After the change, the path matches.
+      assert_equal "/wildcard/a%0Anewline", url_helpers.wildcard_path(wildcard_segment: "a\nnewline")
+    ```
 
-    *Nick Reed + DHH*
+    Fixes #39103
 
-*   Handle `:protocol` option in `stylesheet_link_tag` and `javascript_include_tag`
+    *Ignacio Chiazzo*
 
-    *Vasiliy Ermolovich*
+*   Treat html suffix in controller translation.
 
-*   Clear url helper methods when routes are reloaded. *Andrew White*
+    *Rui Onodera*, *Gavin Miller*
 
-*   Fix a bug in `ActionDispatch::Request#raw_post` that caused `env['rack.input']`
-    to be read but not rewound.
+*   Allow permitting numeric params.
 
-    *Matt Venables*
-
-*   Prevent raising EOFError on multipart GET request (IE issue). *Adam Stankiewicz*
-
-*   Rename all action callbacks from *_filter to *_action to avoid the misconception that these
-    callbacks are only suited for transforming or halting the response. With the new style,
-    it's more inviting to use them as they were intended, like setting shared ivars for views.
-
-    Example:
-
-        class PeopleController < ActionController::Base
-          before_action :set_person,      except: [:index, :new, :create]
-          before_action :ensure_permission, only: [:edit, :update]
-
-          ...
-
-          private
-            def set_person
-              @person = current_account.people.find(params[:id])
-            end
-
-            def ensure_permission
-              current_person.can_change?(@person)
-            end
-        end
-
-    The old *_filter methods still work with no deprecation notice.
-
-    *DHH*
-
-*   Add `cache_if` and `cache_unless` for conditional fragment caching:
-
-    Example:
-
-        <%= cache_if condition, project do %>
-          <b>All the topics on this project</b>
-          <%= render project.topics %>
-        <% end %>
-
-        # and
-
-        <%= cache_unless condition, project do %>
-          <b>All the topics on this project</b>
-          <%= render project.topics %>
-        <% end %>
-
-    *Stephen Ausman + Fabrizio Regini + Angelo Capilleri*
-
-*   Add filter capability to ActionController logs for redirect locations:
-
-        config.filter_redirect << 'http://please.hide.it/'
-
-    *Fabrizio Regini*
-
-*   Fixed a bug that ignores constraints on a glob route. This was caused because the constraint
-    regular expression is overwritten when the `routes.rb` file is processed. Fixes #7924
-
-    *Maura Fitzgerald*
-
-*   More descriptive error messages when calling `render :partial` with
-    an invalid `:layout` argument.
-    #8376
-
-        render partial: 'partial', layout: true
-
-        # results in ActionView::MissingTemplate: Missing partial /true
-
-    *Yves Senn*
-
-*   Sweepers was extracted from Action Controller as `rails-observers` gem.
-
-    *Rafael Mendonça França*
-
-*   Add option flag to `CacheHelper#cache` to manually bypass automatic template digests:
-
-        <% cache project, skip_digest: true do %>
-          ...
-        <% end %>
-
-    *Drew Ulmer*
-
-*   No sort Hash options in `grouped_options_for_select`. *Sergey Kojin*
-
-*   Accept symbols as `send_data :disposition` value *Elia Schito*
-
-*   Add i18n scope to `distance_of_time_in_words`. *Steve Klabnik*
-
-*   `assert_template`:
-    - is no more passing with empty string.
-    - is now validating option keys. It accepts: `:layout`, `:partial`, `:locals` and `:count`.
-
-    *Roberto Soares*
-
-*   Allow setting a symbol as path in scope on routes. This is now allowed:
-
-        scope :api do
-          resources :users
-        end
-
-    It is also possible to pass multiple symbols to scope to shorten multiple nested scopes:
-
-        scope :api do
-          scope :v1 do
-            resources :users
-          end
-        end
-
-    can be rewritten as:
-
-        scope :api, :v1 do
-          resources :users
-        end
-
-    *Guillermo Iguaran + Amparo Luna*
-
-*   Fix error when using a non-hash query argument named "params" in `url_for`.
-
-    Before:
-
-        url_for(params: "") # => undefined method `reject!' for "":String
-
-    After:
-
-        url_for(params: "") # => http://www.example.com?params=
-
-    *tumayun + Carlos Antonio da Silva*
-
-*   Render every partial with a new `ActionView::PartialRenderer`. This resolves
-    issues when rendering nested partials.
-    Fix #8197
-
-    *Yves Senn*
-
-*   Introduce `ActionView::Template::Handlers::ERB.escape_whitelist`. This is a list
-    of mime types where template text is not html escaped by default. It prevents `Jack & Joe`
-    from rendering as `Jack &amp; Joe` for the whitelisted mime types. The default whitelist
-    contains text/plain. Fix #7976
-
-    *Joost Baaij*
-
-*   Fix input name when `multiple: true` and `:index` are set.
-
-    Before:
-
-        check_box("post", "comment_ids", { multiple: true, index: "foo" }, 1)
-        #=> <input name=\"post[foo][comment_ids]\" type=\"hidden\" value=\"0\" /><input id=\"post_foo_comment_ids_1\" name=\"post[foo][comment_ids]\" type=\"checkbox\" value=\"1\" />
-
-    After:
-
-        check_box("post", "comment_ids", { multiple: true, index: "foo" }, 1)
-        #=> <input name=\"post[foo][comment_ids][]\" type=\"hidden\" value=\"0\" /><input id=\"post_foo_comment_ids_1\" name=\"post[foo][comment_ids][]\" type=\"checkbox\" value=\"1\" />
-
-    Fix #8108
-
-    *Daniel Fox, Grant Hutchins & Trace Wax*
-
-*   `BestStandardsSupport` middleware now appends it's `X-UA-Compatible` value to app's
-    returned value if any. Fix #8086
-
-    *Nikita Afanasenko*
-
-*   `date_select` helper accepts `with_css_classes: true` to add css classes similar with type
-    of generated select tags.
-
-    *Pavel Nikitin*
-
-*   Only non-js/css under app/assets path will be included in default config.assets.precompile.
-
-    *Josh Peek*
-
-*   Remove support for the RAILS_ASSET_ID environment configuration
-    (no longer needed now that we have the asset pipeline).
-
-    *Josh Peek*
-
-*   Remove old asset_path configuration (no longer needed now that we have the asset pipeline).
-
-    *Josh Peek*
-
-*   `assert_template` can be used to assert on the same template with different locals
-    Fix #3675
-
-    *Yves Senn*
-
-*   Remove old asset tag concatenation (no longer needed now that we have the asset pipeline).
-
-    *Josh Peek*
-
-*   Accept :remote as symbolic option for `link_to` helper. *Riley Lynch*
-
-*   Warn when the `:locals` option is passed to `assert_template` outside of a view test case
-    Fix #3415
-
-    *Yves Senn*
-
-*   The `Rack::Cache` middleware is now disabled by default. To enable it,
-    set `config.action_dispatch.rack_cache = true` and add `gem rack-cache` to your Gemfile.
-
-    *Guillermo Iguaran*
-
-*   `ActionController::Base.page_cache_extension` option is deprecated
-    in favour of `ActionController::Base.default_static_extension`.
-
-    *Francesco Rodriguez*
-
-*   Action and Page caching has been extracted from Action Dispatch
-    as `actionpack-action_caching` and `actionpack-page_caching` gems.
-    Please read the `README.md` file on both gems for the usage.
-
-    *Francesco Rodriguez*
-
-*   Failsafe exception returns text/plain. *Steve Klabnik*
-
-*   Remove `rack-cache` dependency from Action Pack and declare it on Gemfile
-
-    *Guillermo Iguaran*
-
-*   Rename internal variables on ActionController::TemplateAssertions to prevent
-    naming collisions. @partials, @templates and @layouts are now prefixed with an underscore.
-    Fix #7459
-
-    *Yves Senn*
-
-*   `resource` and `resources` don't modify the passed options hash
-    Fix #7777
-
-    *Yves Senn*
-
-*   Precompiled assets include aliases from foo.js to foo/index.js and vice versa.
-
-        # Precompiles phone-<digest>.css and aliases phone/index.css to phone.css.
-        config.assets.precompile = [ 'phone.css' ]
-
-        # Precompiles phone/index-<digest>.css and aliases phone.css to phone/index.css.
-        config.assets.precompile = [ 'phone/index.css' ]
-
-        # Both of these work with either precompile thanks to their aliases.
-        <%= stylesheet_link_tag 'phone', media: 'all' %>
-        <%= stylesheet_link_tag 'phone/index', media: 'all' %>
-
-    *Jeremy Kemper*
-
-*   `assert_template` is no more passing with what ever string that matches
-    with the template name.
-
-    Before when we have a template `/layout/hello.html.erb`, `assert_template`
-    was passing with any string that matches. This behavior allowed false
-    positive like:
-
-        assert_template "layout"
-        assert_template "out/hello"
-
-    Now it only passes with:
-
-        assert_template "layout/hello"
-        assert_template "hello"
-
-    Fixes #3849.
-
-    *Hugolnx*
-
-*   `image_tag` will set the same width and height for image if numerical value
-    passed to `size` option.
-
-    *Nihad Abbasov*
-
-*   Deprecate Mime::Type#verify_request? and Mime::Type.browser_generated_types,
-    since they are no longer used inside of Rails, they will be removed in Rails 4.1
-
-    *Michael Grosser*
-
-*   `ActionDispatch::Http::UploadedFile` now delegates `close` to its tempfile. *Sergio Gil*
-
-*   Add `ActionController::StrongParameters`, this module converts `params` hash into
-    an instance of ActionController::Parameters that allows whitelisting of permitted
-    parameters. Non-permitted parameters are forbidden to be used in Active Model by default
-    For more details check the documentation of the module or the
-    [strong_parameters gem](https://github.com/rails/strong_parameters)
-
-    *DHH + Guillermo Iguaran*
-
-*   Remove Integration between `attr_accessible`/`attr_protected` and
-    `ActionController::ParamsWrapper`. ParamWrapper now wraps all the parameters returned
-    by the class method attribute_names
-
-    *Guillermo Iguaran*
-
-*   Fix #7646, the log now displays the correct status code when an exception is raised.
-
-    *Yves Senn*
-
-*   Allow pass couple extensions to `ActionView::Template.register_template_handler` call.
-
-    *Tima Maslyuchenko*
-
-*   Sprockets integration has been extracted from Action Pack to the `sprockets-rails`
-    gem. `rails` gem is depending on `sprockets-rails` by default.
-
-    *Guillermo Iguaran*
-
-*   `ActionDispatch::Session::MemCacheStore` now uses `dalli` instead of the deprecated
-    `memcache-client` gem. As side effect the autoloading of unloaded classes objects
-    saved as values in session isn't supported anymore when mem_cache session store is
-    used, this can have an impact in apps only when config.cache_classes is false.
-
-    *Arun Agrawal + Guillermo Iguaran*
-
-*   Support multiple etags in If-None-Match header. *Travis Warlick*
-
-*   Allow to configure how unverified request will be handled using `:with`
-    option in `protect_from_forgery` method.
-
-    Valid unverified request handling methods are:
-
-    - `:exception` - Raises ActionController::InvalidAuthenticityToken exception.
-    - `:reset_session` - Resets the session.
-    - `:null_session` - Provides an empty session during request but doesn't
-      reset it completely. Used as default if `:with` option is not specified.
-
-    New applications are generated with:
-
-        protect_from_forgery with: :exception
-
-    *Sergey Nartimov*
-
-*   Add .ruby template handler, this handler simply allows arbitrary Ruby code as a template. *Guillermo Iguaran*
-
-*   Add `separator` option for `ActionView::Helpers::TextHelper#excerpt`:
-
-        excerpt('This is a very beautiful morning', 'very', separator: ' ', radius: 1)
-        # => ...a very beautiful...
-
-    *Guirec Corbel*
-
-*   Added controller-level etag additions that will be part of the action etag computation *Jeremy Kemper/DHH*
-
-        class InvoicesController < ApplicationController
-          etag { current_user.try :id }
-
-          def show
-            # Etag will differ even for the same invoice when it's viewed by a different current_user
-            @invoice = Invoice.find(params[:id])
-            fresh_when(@invoice)
-          end
-        end
-
-*   Add automatic template digests to all `CacheHelper#cache` calls (originally spiked in the cache_digests plugin) *DHH*
-
-*   When building a URL fails, add missing keys provided by Journey. Failed URL
-    generation now returns a 500 status instead of a 404.
-
-    *Richard Schneeman*
-
-*   Deprecate availbility of `ActionView::RecordIdentifier` in controllers by default.
-    It's view specific and can be easily included in controller manually if someone
-    really needs it. RecordIdentifier will be removed from `ActionController::Base`
-    in Rails 4.1. *Piotr Sarnacki*
-
-*   Fix `ActionView::RecordIdentifier` to work as a singleton. *Piotr Sarnacki*
-
-*   Deprecate `Template#mime_type`, it will be removed in Rails 4.1 in favor of `#type`.
-    *Piotr Sarnacki*
-
-*   Move vendored html-scanner from `action_controller` to `action_view` directory. If you
-    require it directly, please use 'action_view/vendor/html-scanner', reference to
-    'action_controller/vendor/html-scanner' will be removed in Rails 4.1. *Piot Sarnacki*
-
-*   Fix handling of date selects when using both disabled and discard options.
-    Fixes #7431.
-
-    *Vasiliy Ermolovich*
-
-*   `ActiveRecord::SessionStore` is extracted out of Rails into a gem `activerecord-session_store`.
-    Setting `config.session_store` to `:active_record_store` will no longer work and will break
-    if the `activerecord-session_store` gem isn't available. *Prem Sichanugrist*
-
-*   Fix `select_tag` when `option_tags` is nil.
-    Fixes #7404.
-
-    *Sandeep Ravichandran*
-
-*   Add `Request#formats=(extensions)` that lets you set multiple formats directly in a prioritized order.
-
-    Example of using this for custom iphone views with an HTML fallback:
-
-        class ApplicationController < ActionController::Base
-          before_filter :adjust_format_for_iphone_with_html_fallback
-
-          private
-            def adjust_format_for_iphone_with_html_fallback
-              request.formats = [ :iphone, :html ] if request.env["HTTP_USER_AGENT"][/iPhone/]
-            end
-        end
-
-    *DHH*
-
-*   Add Routing Concerns to declare common routes that can be reused inside
-    others resources and routes.
-
-    Code before:
-
-        resources :messages do
-          resources :comments
-        end
-
-        resources :posts do
-          resources :comments
-          resources :images, only: :index
-        end
-
-    Code after:
-
-        concern :commentable do
-          resources :comments
-        end
-
-        concern :image_attachable do
-          resources :images, only: :index
-        end
-
-        resources :messages, concerns: :commentable
-
-        resources :posts, concerns: [:commentable, :image_attachable]
-
-    *DHH + Rafael Mendonça França*
-
-*   Add `start_hour` and `end_hour` options to the `select_hour` helper. *Evan Tann*
-
-*   Raises an `ArgumentError` when the first argument in `form_for` contain `nil`
-    or is empty.
-
-    *Richard Schneeman*
-
-*   Add 'X-Frame-Options' => 'SAMEORIGIN'
-    'X-XSS-Protection' => '1; mode=block' and
-    'X-Content-Type-Options' => 'nosniff'
-    as default headers.
-
-    *Egor Homakov*
-
-*   Allow data attributes to be set as a first-level option for form_for, so you can write `form_for @record, data: { behavior: 'autosave' }` instead of `form_for @record, html: { data: { behavior: 'autosave' } }` *DHH*
-
-*   Deprecate `button_to_function` and `link_to_function` helpers.
-
-    We recommend the use of Unobtrusive JavaScript instead. For example:
-
-        link_to "Greeting", "#", class: "nav_link"
-
-        $(function() {
-          $('.nav_link').click(function() {
-            // Some complex code
-
-            return false;
-          });
-        });
-
-    or
-
-        link_to "Greeting", '#', onclick: "alert('Hello world!'); return false", class: "nav_link"
-
-    for simple cases.
-
-    *Rafael Mendonça França*
-
-*   `javascript_include_tag :all` will now not include `application.js` if the file does not exists. *Prem Sichanugrist*
-
-*   Send an empty response body when call `head` with status between 100 and 199, 204, 205 or 304.
-
-    *Armand du Plessis*
-
-*   Fixed issue with where digest authentication would not work behind a proxy. *Arthur Smith*
-
-*   Added `ActionController::Live`.  Mix it in to your controller and you can
-    stream data to the client live.  For example:
-
-        class FooController < ActionController::Base
-          include ActionController::Live
-
-          def index
-            100.times {
-              # Client will see this as it's written
-              response.stream.write "hello world\n"
-              sleep 1
+    Previously it was impossible to permit different fields on numeric parameters.
+    After this change you can specify different fields for each numbered parameter.
+    For example params like,
+    ```ruby
+    book: {
+            authors_attributes: {
+              '0': { name: "William Shakespeare", age_of_death: "52" },
+              '1': { name: "Unattributed Assistant" },
+              '2': "Not a hash",
+              'new_record': { name: "Some name" }
             }
-            response.stream.close
-          end
+          }
+    ```
+
+    Before you could permit name on each author with,
+    `permit book: { authors_attributes: [ :name ] }`
+
+    After this change you can permit different keys on each numbered element,
+    `permit book: { authors_attributes: { '1': [ :name ], '0': [ :name, :age_of_death ] } }`
+
+    Fixes #41625
+
+    *Adam Hess*
+
+*   Update `HostAuthorization` middleware to render debug info only
+    when `config.consider_all_requests_local` is set to true.
+
+    Also, blocked host info is always logged with level `error`.
+
+    Fixes #42813
+
+    *Nikita Vyrko*
+
+*  Add Server-Timing middleware
+
+   Server-Timing specification defines how the server can communicate to browsers performance metrics
+   about the request it is responding to.
+
+   The ServerTiming middleware is enabled by default on `development` environment by default using the
+   `config.server_timing` setting and set the relevant duration metrics in the `Server-Timing` header
+
+   The full specification for Server-Timing header can be found in: https://www.w3.org/TR/server-timing/#dfn-server-timing-header-field
+
+   *Sebastian Sogamoso*, *Guillermo Iguaran*
+
+
+## Rails 7.0.0.alpha2 (September 15, 2021) ##
+
+*   No changes.
+
+
+## Rails 7.0.0.alpha1 (September 15, 2021) ##
+
+*   Use a static error message when raising `ActionDispatch::Http::Parameters::ParseError`
+    to avoid inadvertently logging the HTTP request body at the `fatal` level when it contains
+    malformed JSON.
+
+    Fixes #41145
+
+    *Aaron Lahey*
+
+*   Add `Middleware#delete!` to delete middleware or raise if not found.
+
+    `Middleware#delete!` works just like `Middleware#delete` but will
+    raise an error if the middleware isn't found.
+
+    *Alex Ghiculescu*, *Petrik de Heus*, *Junichi Sato*
+
+*   Raise error on unpermitted open redirects.
+
+    Add `allow_other_host` options to `redirect_to`.
+    Opt in to this behaviour with `ActionController::Base.raise_on_open_redirects = true`.
+
+    *Gannon McGibbon*
+
+*   Deprecate `poltergeist` and `webkit` (capybara-webkit) driver registration for system testing (they will be removed in Rails 7.1). Add `cuprite` instead.
+
+    [Poltergeist](https://github.com/teampoltergeist/poltergeist) and [capybara-webkit](https://github.com/thoughtbot/capybara-webkit) are already not maintained. These usage in Rails are removed for avoiding confusing users.
+
+    [Cuprite](https://github.com/rubycdp/cuprite) is a good alternative to Poltergeist. Some guide descriptions are replaced from Poltergeist to Cuprite.
+
+    *Yusuke Iwaki*
+
+*   Exclude additional flash types from `ActionController::Base.action_methods`.
+
+    Ensures that additional flash types defined on ActionController::Base subclasses
+    are not listed as actions on that controller.
+
+        class MyController < ApplicationController
+          add_flash_types :hype
         end
 
-    *Aaron Patterson*
+        MyController.action_methods.include?('hype') # => false
 
-*   Remove `ActionDispatch::Head` middleware in favor of `Rack::Head`. *Santiago Pastorino*
+    *Gavin Morrice*
 
-*   Deprecate `:confirm` in favor of `data: { confirm: "Text" }` option for `button_to`, `button_tag`, `image_submit_tag`, `link_to` and `submit_tag` helpers.
+*   OpenSSL constants are now used for Digest computations.
 
-    *Carlos Galdino + Rafael Mendonça França*
+    *Dirkjan Bussink*
 
-*   Show routes in exception page while debugging a `RoutingError` in development. *Richard Schneeman and Mattt Thompson*
+*   Remove IE6-7-8 file download related hack/fix from ActionController::DataStreaming module.
 
-*   Add `ActionController::Flash.add_flash_types` method to allow people to register their own flash types. e.g.:
+    Due to the age of those versions of IE this fix is no longer relevant, more importantly it creates an edge-case for unexpected Cache-Control headers.
 
-        class ApplicationController
-          add_flash_types :error, :warning
-        end
+    *Tadas Sasnauskas*
 
-    If you add the above code, you can use `<%= error %>` in an erb, and `redirect_to /foo, error: 'message'` in a controller.
+*   Configuration setting to skip logging an uncaught exception backtrace when the exception is
+    present in `rescued_responses`.
 
-    *kennyj*
+    It may be too noisy to get all backtraces logged for applications that manage uncaught
+    exceptions via `rescued_responses` and `exceptions_app`.
+    `config.action_dispatch.log_rescued_responses` (defaults to `true`) can be set to `false` in
+    this case, so that only exceptions not found in `rescued_responses` will be logged.
 
-*   Remove Active Model dependency from Action Pack. *Guillermo Iguaran*
+    *Alexander Azarov*, *Mike Dalessio*
 
-*   Support unicode characters in routes. Route will be automatically escaped, so instead of manually escaping:
+*   Ignore file fixtures on `db:fixtures:load`.
 
-        get Rack::Utils.escape('こんにちは') => 'home#index'
+    *Kevin Sjöberg*
 
-    You just have to write the unicode route:
+*   Fix ActionController::Live controller test deadlocks by removing the body buffer size limit for tests.
 
-        get 'こんにちは' => 'home#index'
+    *Dylan Thacker-Smith*
 
-    *kennyj*
+*   New `ActionController::ConditionalGet#no_store` method to set HTTP cache control `no-store` directive.
 
-*   Return proper format on exceptions. *Santiago Pastorino*
+    *Tadas Sasnauskas*
 
-*   Allow to use `mounted_helpers` (helpers for accessing mounted engines) in `ActionView::TestCase`. *Piotr Sarnacki*
+*   Drop support for the `SERVER_ADDR` header.
 
-*   Include `mounted_helpers` (helpers for accessing mounted engines) in `ActionDispatch::IntegrationTest` by default. *Piotr Sarnacki*
+    Following up https://github.com/rack/rack/pull/1573 and https://github.com/rails/rails/pull/42349.
 
-*   Extracted redirect logic from `ActionController::ForceSSL::ClassMethods.force_ssl`  into `ActionController::ForceSSL#force_ssl_redirect`
+    *Ricardo Díaz*
 
-    *Jeremy Friesen*
+*   Set session options when initializing a basic session.
 
-*   Make possible to use a block in `button_to` if the button text is hard
-    to fit into the name parameter, e.g.:
+    *Gannon McGibbon*
 
-        <%= button_to [:make_happy, @user] do %>
-          Make happy <strong><%= @user.name %></strong>
-        <% end %>
-        # => "<form method="post" action="/users/1/make_happy" class="button_to">
-        #      <div>
-        #        <button type="submit">
-        #          Make happy <strong>Name</strong>
-        #        </button>
-        #      </div>
-        #    </form>"
+*   Add `cache_control: {}` option to `fresh_when` and `stale?`.
 
-    *Sergey Nartimov*
+    Works as a shortcut to set `response.cache_control` with the above methods.
 
-*   change a way of ordering helpers from several directories. Previously,
-    when loading helpers from multiple paths, all of the helpers files were
-    gathered into one array an then they were sorted. Helpers from different
-    directories should not be mixed before loading them to make loading more
-    predictable. The most common use case for such behavior is loading helpers
-    from engines. When you load helpers from application and engine Foo, in
-    that order, first rails will load all of the helpers from application,
-    sorted alphabetically and then it will do the same for Foo engine.
+    *Jacopo Beschi*
 
-    *Piotr Sarnacki*
+*   Writing into a disabled session will now raise an error.
 
-*   `truncate` now always returns an escaped HTML-safe string. The option `:escape` can be used as
-    false to not escape the result.
+    Previously when no session store was set, writing into the session would silently fail.
 
-    *Li Ellis Gallardo + Rafael Mendonça França*
+    *Jean Boussier*
 
-*   `truncate` now accepts a block to show extra content when the text is truncated. *Li Ellis Gallardo*
+*   Add support for 'require-trusted-types-for' and 'trusted-types' headers.
 
-*   Add `week_field`, `week_field_tag`, `month_field`, `month_field_tag`, `datetime_local_field`,
-    `datetime_local_field_tag`, `datetime_field` and `datetime_field_tag` helpers. *Carlos Galdino*
+    Fixes #42034.
 
-*   Add `color_field` and `color_field_tag` helpers. *Carlos Galdino*
+    *lfalcao*
 
-*   `assert_generates`, `assert_recognizes`, and `assert_routing` all raise
-    `Assertion` instead of `RoutingError` *David Chelimsky*
+*   Remove inline styles and address basic accessibility issues on rescue templates.
 
-*   URL path parameters with invalid encoding now raise ActionController::BadRequest. *Andrew White*
+    *Jacob Herrington*
 
-*   Malformed query and request parameter hashes now raise ActionController::BadRequest. *Andrew White*
+*   Add support for 'private, no-store' Cache-Control headers.
 
-*   Add `divider` option to `grouped_options_for_select` to generate a separator
-    `optgroup` automatically, and deprecate `prompt` as third argument, in favor
-    of using an options hash. *Nicholas Greenfield*
+    Previously, 'no-store' was exclusive; no other directives could be specified.
 
-*   Add `time_field` and `time_field_tag` helpers which render an `input[type="time"]` tag. *Alex Soulim*
+    *Alex Smith*
 
-*   Removed old text_helper apis for highlight, excerpt and word_wrap *Jeremy Walker*
+*   Expand payload of `unpermitted_parameters.action_controller` instrumentation to allow subscribers to
+    know which controller action received unpermitted parameters.
 
-*   Templates without a handler extension now raises a deprecation warning but still
-    defaults to ERb. In future releases, it will simply return the template contents. *Steve Klabnik*
+    *bbuchalter*
 
-*   Deprecate `:disable_with` in favor of `data: { disable_with: "Text" }` option from `submit_tag`, `button_tag` and `button_to` helpers.
+*   Add `ActionController::Live#send_stream` that makes it more convenient to send generated streams:
 
-    *Carlos Galdino + Rafael Mendonça França*
+    ```ruby
+    send_stream(filename: "subscribers.csv") do |stream|
+      stream.writeln "email_address,updated_at"
 
-*   Remove `:mouseover` option from `image_tag` helper. *Rafael Mendonça França*
+      @subscribers.find_each do |subscriber|
+        stream.writeln [ subscriber.email_address, subscriber.updated_at ].join(",")
+      end
+    end
+    ```
 
-*   The `select` method (select tag) forces :include_blank  if `required` is true and
-    `display size` is one and `multiple` is not true. *Angelo Capilleri*
+    *DHH*
 
-*   Copy literal route constraints to defaults so that url generation know about them.
-    The copied constraints are `:protocol`, `:subdomain`, `:domain`, `:host` and `:port`.
+*   Add `ActionController::Live::Buffer#writeln` to write a line to the stream with a newline included.
 
-    *Andrew White*
+    *DHH*
 
-*   `respond_to` and `respond_with` now raise ActionController::UnknownFormat instead
-    of directly returning head 406. The exception is rescued and converted to 406
-    in the exception handling middleware. *Steven Soroka*
+*   `ActionDispatch::Request#content_type` now returned Content-Type header as it is.
 
-*   Allows `assert_redirected_to` to match against a regular expression. *Andy Lindeman*
+    Previously, `ActionDispatch::Request#content_type` returned value does NOT contain charset part.
+    This behavior changed to returned Content-Type header containing charset part as it is.
 
-*   Add backtrace to development routing error page. *Richard Schneeman*
+    If you want just MIME type, please use `ActionDispatch::Request#media_type` instead.
 
-*   Replace `include_seconds` boolean argument with `include_seconds: true` option
-    in `distance_of_time_in_words` and `time_ago_in_words` signature. *Dmitriy Kiriyenko*
+    Before:
 
-*   Make current object and counter (when it applies) variables accessible when
-    rendering templates with :object / :collection. *Carlos Antonio da Silva*
+    ```ruby
+    request = ActionDispatch::Request.new("CONTENT_TYPE" => "text/csv; header=present; charset=utf-16", "REQUEST_METHOD" => "GET")
+    request.content_type #=> "text/csv"
+    ```
 
-*   JSONP now uses mimetype text/javascript instead of application/json. *omjokine*
+    After:
 
-*   Allow to lazy load `default_form_builder` by passing a `String` instead of a constant. *Piotr Sarnacki*
+    ```ruby
+    request = ActionDispatch::Request.new("Content-Type" => "text/csv; header=present; charset=utf-16", "REQUEST_METHOD" => "GET")
+    request.content_type #=> "text/csv; header=present; charset=utf-16"
+    request.media_type   #=> "text/csv"
+    ```
 
-*   Session arguments passed to `process` calls in functional tests are now merged into
-    the existing session, whereas previously they would replace the existing session.
-    This change may break some existing tests if they are asserting the exact contents of
-    the session but should not break existing tests that only assert individual keys.
+    *Rafael Mendonça França*
 
-    *Andrew White*
+*   Change `ActionDispatch::Request#media_type` to return `nil` when the request don't have a `Content-Type` header.
 
-*   Add `index` method to FormBuilder class. *Jorge Bejar*
+    *Rafael Mendonça França*
 
-*   Remove the leading \n added by textarea on assert_select. *Santiago Pastorino*
+*   Fix error in `ActionController::LogSubscriber` that would happen when throwing inside a controller action.
 
-*   Changed default value for `config.action_view.embed_authenticity_token_in_remote_forms`
-    to `false`. This change breaks remote forms that need to work also without javascript,
-    so if you need such behavior, you can either set it to `true` or explicitly pass
-    `authenticity_token: true` in form options
+    *Janko Marohnić*
 
-*   Added ActionDispatch::SSL middleware that when included force all the requests to be under HTTPS protocol. *Rafael Mendonça França*
+*   Allow anything with `#to_str` (like `Addressable::URI`) as a `redirect_to` location.
 
-*   Add `include_hidden` option to select tag. With `include_hidden: false` select with `multiple` attribute doesn't generate hidden input with blank value. *Vasiliy Ermolovich*
+    *ojab*
 
-*   Removed default `size` option from the `text_field`, `search_field`, `telephone_field`, `url_field`, `email_field` helpers. *Philip Arndt*
+*   Change the request method to a `GET` when passing failed requests down to `config.exceptions_app`.
 
-*   Removed default `cols` and `rows` options from the `text_area` helper. *Philip Arndt*
+    *Alex Robbin*
 
-*   Adds support for layouts when rendering a partial with a given collection. *serabe*
+*   Deprecate the ability to assign a single value to `config.action_dispatch.trusted_proxies`
+    as `RemoteIp` middleware behaves inconsistently depending on whether this is configured
+    with a single value or an enumerable.
 
-*   Allows the route helper `root` to take a string argument. For example, `root 'pages#main'`. *bcardarella*
+    Fixes #40772.
 
-*   Forms of persisted records use always PATCH (via the `_method` hack). *fxn*
+    *Christian Sutter*
 
-*   For resources, both PATCH and PUT are routed to the `update` action. *fxn*
+*   Add `redirect_back_or_to(fallback_location, **)` as a more aesthetically pleasing version of `redirect_back fallback_location:, **`.
+    The old method name is retained without explicit deprecation.
 
-*   Don't ignore `force_ssl` in development. This is a change of behavior - use a `:if` condition to recreate the old behavior.
+    *DHH*
 
-        class AccountsController < ApplicationController
-          force_ssl if: :ssl_configured?
 
-          def ssl_configured?
-            !Rails.env.development?
-          end
-        end
-
-    *Pat Allan*
-
-*   Adds support for the PATCH verb:
-      * Request objects respond to `patch?`.
-      * Routes have a new `patch` method, and understand `:patch` in the
-        existing places where a verb is configured, like `:via`.
-      * New method `patch` available in functional tests.
-      * If `:patch` is the default verb for updates, edits are
-        tunneled as PATCH rather than as PUT, and routing acts accordingly.
-      * New method `patch_via_redirect` available in integration tests.
-
-    *dlee*
-
-*   Integration tests support the `OPTIONS` method. *Jeremy Kemper*
-
-*   `expires_in` accepts a `must_revalidate` flag. If true, "must-revalidate"
-    is added to the Cache-Control header. *fxn*
-
-*   Add `date_field` and `date_field_tag` helpers which render an `input[type="date"]` tag *Olek Janiszewski*
-
-*   Adds `image_url`, `javascript_url`, `stylesheet_url`, `audio_url`, `video_url`, and `font_url`
-    to assets tag helper. These URL helpers will return the full path to your assets. This is useful
-    when you are going to reference this asset from external host. *Prem Sichanugrist*
-
-*   Default responder will now always use your overridden block in `respond_with` to render your response. *Prem Sichanugrist*
-
-*   Allow `value_method` and `text_method` arguments from `collection_select` and
-    `options_from_collection_for_select` to receive an object that responds to `:call`,
-    such as a `proc`, to evaluate the option in the current element context. This works
-    the same way with `collection_radio_buttons` and `collection_check_boxes`.
-
-    *Carlos Antonio da Silva + Rafael Mendonça França*
-
-*   Add `collection_check_boxes` form helper, similar to `collection_select`:
-    Example:
-
-        collection_check_boxes :post, :author_ids, Author.all, :id, :name
-        # Outputs something like:
-        <input id="post_author_ids_1" name="post[author_ids][]" type="checkbox" value="1" />
-        <label for="post_author_ids_1">D. Heinemeier Hansson</label>
-        <input id="post_author_ids_2" name="post[author_ids][]" type="checkbox" value="2" />
-        <label for="post_author_ids_2">D. Thomas</label>
-        <input name="post[author_ids][]" type="hidden" value="" />
-
-    The label/check_box pairs can be customized with a block.
-
-    *Carlos Antonio da Silva + Rafael Mendonça França*
-
-*   Add `collection_radio_buttons` form helper, similar to `collection_select`:
-    Example:
-
-        collection_radio_buttons :post, :author_id, Author.all, :id, :name
-        # Outputs something like:
-        <input id="post_author_id_1" name="post[author_id]" type="radio" value="1" />
-        <label for="post_author_id_1">D. Heinemeier Hansson</label>
-        <input id="post_author_id_2" name="post[author_id]" type="radio" value="2" />
-        <label for="post_author_id_2">D. Thomas</label>
-
-    The label/radio_button pairs can be customized with a block.
-
-    *Carlos Antonio da Silva + Rafael Mendonça França*
-
-*   `check_box` with `:form` html5 attribute will now replicate the `:form`
-    attribute to the hidden field as well. *Carlos Antonio da Silva*
-
-*   Turn off verbose mode of rack-cache, we still have X-Rack-Cache to
-    check that info. Closes #5245. *Santiago Pastorino*
-
-*   `label` form helper accepts `for: nil` to not generate the attribute. *Carlos Antonio da Silva*
-
-*   Add `:format` option to `number_to_percentage`. *Rodrigo Flores*
-
-*   Add `config.action_view.logger` to configure logger for Action View. *Rafael Mendonça França*
-
-*   Deprecated `ActionController::Integration` in favour of `ActionDispatch::Integration`.
-
-*   Deprecated `ActionController::IntegrationTest` in favour of `ActionDispatch::IntegrationTest`.
-
-*   Deprecated `ActionController::PerformanceTest` in favour of `ActionDispatch::PerformanceTest`.
-
-*   Deprecated `ActionController::AbstractRequest` in favour of `ActionDispatch::Request`.
-
-*   Deprecated `ActionController::Request` in favour of `ActionDispatch::Request`.
-
-*   Deprecated `ActionController::AbstractResponse` in favour of `ActionDispatch::Response`.
-
-*   Deprecated `ActionController::Response` in favour of `ActionDispatch::Response`.
-
-*   Deprecated `ActionController::Routing` in favour of `ActionDispatch::Routing`.
-
-*   `check_box helper` with `disabled: true` will generate a disabled
-    hidden field to conform with the HTML convention where disabled fields are
-    not submitted with the form. This is a behavior change, previously the hidden
-    tag had a value of the disabled checkbox. *Tadas Tamosauskas*
-
-*   `favicon_link_tag` helper will now use the favicon in app/assets by default. *Lucas Caton*
-
-*   `ActionView::Helpers::TextHelper#highlight` now defaults to the
-    HTML5 `mark` element. *Brian Cardarella*
-
-Please check [3-2-stable](https://github.com/rails/rails/blob/3-2-stable/actionpack/CHANGELOG.md) for previous changes.
+Please check [6-1-stable](https://github.com/rails/rails/blob/6-1-stable/actionpack/CHANGELOG.md) for previous changes.

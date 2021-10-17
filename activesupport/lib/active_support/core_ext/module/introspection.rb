@@ -1,14 +1,19 @@
-require 'active_support/inflector'
+# frozen_string_literal: true
+
+require "active_support/core_ext/string/filters"
+require "active_support/inflector"
 
 class Module
   # Returns the name of the module containing this one.
   #
-  #   M::N.parent_name # => "M"
-  def parent_name
-    if defined? @parent_name
+  #   M::N.module_parent_name # => "M"
+  def module_parent_name
+    if defined?(@parent_name)
       @parent_name
     else
-      @parent_name = name =~ /::[^:]+\Z/ ? $`.freeze : nil
+      parent_name = name =~ /::[^:]+\z/ ? -$` : nil
+      @parent_name = parent_name unless frozen?
+      parent_name
     end
   end
 
@@ -20,15 +25,15 @@ class Module
   #   end
   #   X = M::N
   #
-  #   M::N.parent # => M
-  #   X.parent    # => M
+  #   M::N.module_parent # => M
+  #   X.module_parent    # => M
   #
   # The parent of top-level and anonymous modules is Object.
   #
-  #   M.parent          # => Object
-  #   Module.new.parent # => Object
-  def parent
-    parent_name ? ActiveSupport::Inflector.constantize(parent_name) : Object
+  #   M.module_parent          # => Object
+  #   Module.new.module_parent # => Object
+  def module_parent
+    module_parent_name ? ActiveSupport::Inflector.constantize(module_parent_name) : Object
   end
 
   # Returns all the parents of this module according to its name, ordered from
@@ -40,39 +45,19 @@ class Module
   #   end
   #   X = M::N
   #
-  #   M.parents    # => [Object]
-  #   M::N.parents # => [M, Object]
-  #   X.parents    # => [M, Object]
-  def parents
+  #   M.module_parents    # => [Object]
+  #   M::N.module_parents # => [M, Object]
+  #   X.module_parents    # => [M, Object]
+  def module_parents
     parents = []
-    if parent_name
-      parts = parent_name.split('::')
+    if module_parent_name
+      parts = module_parent_name.split("::")
       until parts.empty?
-        parents << ActiveSupport::Inflector.constantize(parts * '::')
+        parents << ActiveSupport::Inflector.constantize(parts * "::")
         parts.pop
       end
     end
     parents << Object unless parents.include? Object
     parents
-  end
-
-  def local_constants #:nodoc:
-    constants(false)
-  end
-
-  # *DEPRECATED*: Use +local_constants+ instead.
-  #
-  # Returns the names of the constants defined locally as strings.
-  #
-  #   module M
-  #     X = 1
-  #   end
-  #   M.local_constant_names # => ["X"]
-  #
-  # This method is useful for forward compatibility, since Ruby 1.8 returns
-  # constant names as strings, whereas 1.9 returns them as symbols.
-  def local_constant_names
-    ActiveSupport::Deprecation.warn 'Module#local_constant_names is deprecated, use Module#local_constants instead'
-    local_constants.map { |c| c.to_s }
   end
 end

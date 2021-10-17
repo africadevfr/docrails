@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require "active_support/concern"
 require "active_support/inflector"
 
@@ -36,17 +38,14 @@ module ActiveSupport
           while names.size > 0 do
             names.last.sub!(/Test$/, "")
             begin
-              constant = names.join("::").constantize
+              constant = names.join("::").safe_constantize
               break(constant) if yield(constant)
-            rescue NameError
-              # Constant wasn't found, move on
             ensure
               names.pop
             end
           end
         end
       end
-
     end
   end
 end

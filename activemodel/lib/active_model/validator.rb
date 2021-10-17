@@ -1,7 +1,8 @@
+# frozen_string_literal: true
+
 require "active_support/core_ext/module/anonymous"
 
 module ActiveModel
-
   # == Active \Model \Validator
   #
   # A simple base class that can be used along with
@@ -15,7 +16,7 @@ module ActiveModel
   #   class MyValidator < ActiveModel::Validator
   #     def validate(record)
   #       if some_complex_logic
-  #         record.errors[:base] = "This record is invalid"
+  #         record.errors.add(:base, "This record is invalid")
   #       end
   #     end
   #
@@ -60,6 +61,9 @@ module ActiveModel
   #     end
   #   end
   #
+  # Note that the validator is initialized only once for the whole application
+  # life cycle, and not on each validation run.
+  #
   # The easiest way to add custom validators for validating individual attributes
   # is with the convenient <tt>ActiveModel::EachValidator</tt>.
   #
@@ -76,41 +80,39 @@ module ActiveModel
   #     include ActiveModel::Validations
   #     attr_accessor :title
   #
-  #     validates :title, presence: true
+  #     validates :title, presence: true, title: true
   #   end
   #
-  # Validator may also define a +setup+ instance method which will get called
-  # with the class that using that validator as its argument. This can be
-  # useful when there are prerequisites such as an +attr_accessor+ being present.
+  # It can be useful to access the class that is using that validator when there are prerequisites such
+  # as an +attr_accessor+ being present. This class is accessible via <tt>options[:class]</tt> in the constructor.
+  # To set up your validator override the constructor.
   #
   #   class MyValidator < ActiveModel::Validator
-  #     def setup(klass)
-  #       klass.send :attr_accessor, :custom_attribute
+  #     def initialize(options={})
+  #       super
+  #       options[:class].attr_accessor :custom_attribute
   #     end
   #   end
-  #
-  # This setup method is only called when used with validation macros or the
-  # class level <tt>validates_with</tt> method.
   class Validator
     attr_reader :options
 
     # Returns the kind of the validator.
     #
     #   PresenceValidator.kind   # => :presence
-    #   UniquenessValidator.kind # => :uniqueness
+    #   AcceptanceValidator.kind # => :acceptance
     def self.kind
-      @kind ||= name.split('::').last.underscore.sub(/_validator$/, '').to_sym unless anonymous?
+      @kind ||= name.split("::").last.underscore.chomp("_validator").to_sym unless anonymous?
     end
 
     # Accepts options that will be made available through the +options+ reader.
-    def initialize(options)
-      @options = options.freeze
+    def initialize(options = {})
+      @options = options.except(:class).freeze
     end
 
-    # Return the kind for this validator.
+    # Returns the kind for this validator.
     #
-    #   PresenceValidator.new.kind   # => :presence
-    #   UniquenessValidator.new.kind # => :uniqueness
+    #   PresenceValidator.new(attributes: [:username]).kind # => :presence
+    #   AcceptanceValidator.new(attributes: [:terms]).kind  # => :acceptance
     def kind
       self.class.kind
     end
@@ -126,8 +128,8 @@ module ActiveModel
   # in the options hash invoking the <tt>validate_each</tt> method passing in the
   # record, attribute and value.
   #
-  # All Active Model validations are built on top of this validator.
-  class EachValidator < Validator #:nodoc:
+  # All \Active \Model validations are built on top of this validator.
+  class EachValidator < Validator
     attr_reader :attributes
 
     # Returns a new validator instance. All options will be available via the
@@ -141,12 +143,13 @@ module ActiveModel
     end
 
     # Performs validation on the supplied record. By default this will call
-    # +validates_each+ to determine validity therefore subclasses should
-    # override +validates_each+ with validation logic.
+    # +validate_each+ to determine validity therefore subclasses should
+    # override +validate_each+ with validation logic.
     def validate(record)
       attributes.each do |attribute|
         value = record.read_attribute_for_validation(attribute)
         next if (value.nil? && options[:allow_nil]) || (value.blank? && options[:allow_blank])
+        value = prepare_value_for_validation(value, record, attribute)
         validate_each(record, attribute, value)
       end
     end
@@ -162,20 +165,24 @@ module ActiveModel
     # +ArgumentError+ when invalid options are supplied.
     def check_validity!
     end
+
+    private
+      def prepare_value_for_validation(value, record, attr_name)
+        value
+      end
   end
 
   # +BlockValidator+ is a special +EachValidator+ which receives a block on initialization
   # and call this block for each attribute being validated. +validates_each+ uses this validator.
-  class BlockValidator < EachValidator #:nodoc:
+  class BlockValidator < EachValidator # :nodoc:
     def initialize(options, &block)
       @block = block
       super
     end
 
     private
-
-    def validate_each(record, attribute, value)
-      @block.call(record, attribute, value)
-    end
+      def validate_each(record, attribute, value)
+        @block.call(record, attribute, value)
+      end
   end
 end

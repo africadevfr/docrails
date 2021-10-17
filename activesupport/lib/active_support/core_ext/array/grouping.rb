@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class Array
   # Splits or iterates over the array in groups of size +number+,
   # padding any remaining slots with +fill_with+ unless it is +false+.
@@ -17,7 +19,12 @@ class Array
   #   ["1", "2"]
   #   ["3", "4"]
   #   ["5"]
-  def in_groups_of(number, fill_with = nil)
+  def in_groups_of(number, fill_with = nil, &block)
+    if number.to_i <= 0
+      raise ArgumentError,
+        "Group size must be a positive integer, was #{number.inspect}"
+    end
+
     if fill_with == false
       collection = self
     else
@@ -25,15 +32,13 @@ class Array
       # subtracting from number gives how many to add;
       # modulo number ensures we don't add group of just fill.
       padding = (number - size % number) % number
-      collection = dup.concat([fill_with] * padding)
+      collection = dup.concat(Array.new(padding, fill_with))
     end
 
     if block_given?
-      collection.each_slice(number) { |slice| yield(slice) }
+      collection.each_slice(number, &block)
     else
-      groups = []
-      collection.each_slice(number) { |group| groups << group }
-      groups
+      collection.each_slice(number).to_a
     end
   end
 
@@ -54,8 +59,8 @@ class Array
   #   ["1", "2", "3"]
   #   ["4", "5"]
   #   ["6", "7"]
-  def in_groups(number, fill_with = nil)
-    # size / number gives minor group size;
+  def in_groups(number, fill_with = nil, &block)
+    # size.div number gives minor group size;
     # size % number gives how many objects need extra accommodation;
     # each group hold either division or division + 1 items.
     division = size.div number
@@ -74,7 +79,7 @@ class Array
     end
 
     if block_given?
-      groups.each { |g| yield(g) }
+      groups.each(&block)
     else
       groups
     end
@@ -86,14 +91,19 @@ class Array
   #   [1, 2, 3, 4, 5].split(3)              # => [[1, 2], [4, 5]]
   #   (1..10).to_a.split { |i| i % 3 == 0 } # => [[1, 2], [4, 5], [7, 8], [10]]
   def split(value = nil, &block)
-    inject([[]]) do |results, element|
-      if block && block.call(element) || value == element
-        results << []
-      else
-        results.last << element
+    arr = dup
+    result = []
+    if block_given?
+      while (idx = arr.index(&block))
+        result << arr.shift(idx)
+        arr.shift
       end
-
-      results
+    else
+      while (idx = arr.index(value))
+        result << arr.shift(idx)
+        arr.shift
+      end
     end
+    result << arr
   end
 end

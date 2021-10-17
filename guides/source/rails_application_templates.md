@@ -1,7 +1,9 @@
+**DO NOT READ THIS FILE ON GITHUB, GUIDES ARE PUBLISHED ON https://guides.rubyonrails.org.**
+
 Rails Application Templates
 ===========================
 
-Application templates are simple Ruby files containing DSL for adding gems/initializers etc. to your freshly created Rails project or an existing Rails project.
+Application templates are simple Ruby files containing DSL for adding gems, initializers, etc. to your freshly created Rails project or an existing Rails project.
 
 After reading this guide, you will know:
 
@@ -13,41 +15,43 @@ After reading this guide, you will know:
 Usage
 -----
 
-To apply a template, you need to provide the Rails generator with the location of the template you wish to apply, using -m option. This can either be path to a file or a URL.
+To apply a template, you need to provide the Rails generator with the location of the template you wish to apply using the `-m` option. This can either be a path to a file or a URL.
 
 ```bash
 $ rails new blog -m ~/template.rb
 $ rails new blog -m http://example.com/template.rb
 ```
 
-You can use the rake task `rails:template` to apply templates to an existing Rails application. The location of the template needs to be passed in to an environment variable named LOCATION. Again, this can either be path to a file or a URL.
+You can use the `app:template` rails command to apply templates to an existing Rails application. The location of the template needs to be passed in via the LOCATION environment variable. Again, this can either be path to a file or a URL.
 
 ```bash
-$ rake rails:template LOCATION=~/template.rb
-$ rake rails:template LOCATION=http://example.com/template.rb
+$ bin/rails app:template LOCATION=~/template.rb
+$ bin/rails app:template LOCATION=http://example.com/template.rb
 ```
 
 Template API
 ------------
 
-Rails templates API is very self explanatory and easy to understand. Here's an example of a typical Rails template:
+The Rails templates API is easy to understand. Here's an example of a typical Rails template:
 
 ```ruby
 # template.rb
 generate(:scaffold, "person name:string")
 route "root to: 'people#index'"
-rake("db:migrate")
+rails_command("db:migrate")
 
-git :init
-git add: "."
-git commit: %Q{ -m 'Initial commit' }
+after_bundle do
+  git :init
+  git add: "."
+  git commit: %Q{ -m 'Initial commit' }
+end
 ```
 
-The following sections outlines the primary methods provided by the API:
+The following sections outline the primary methods provided by the API:
 
 ### gem(*args)
 
-Adds a `gem` entry for the supplied gem to the generated application’s `Gemfile`.
+Adds a `gem` entry for the supplied gem to the generated application's `Gemfile`.
 
 For example, if your application depends on the gems `bj` and `nokogiri`:
 
@@ -59,14 +63,14 @@ gem "nokogiri"
 Please note that this will NOT install the gems for you and you will have to run `bundle install` to do that.
 
 ```bash
-bundle install
+$ bundle install
 ```
 
 ### gem_group(*names, &block)
 
 Wraps gem entries inside a group.
 
-For example, if you want to load `rspec-rails` only in `development` and `test` group:
+For example, if you want to load `rspec-rails` only in the `development` and `test` groups:
 
 ```ruby
 gem_group :development, :test do
@@ -74,14 +78,22 @@ gem_group :development, :test do
 end
 ```
 
-### add_source(source, options = {})
+### add_source(source, options={}, &block)
 
 Adds the given source to the generated application's `Gemfile`.
 
-For example, if you need to source a gem from "http://code.whytheluckystiff.net":
+For example, if you need to source a gem from `"http://gems.github.com"`:
 
 ```ruby
-add_source "http://code.whytheluckystiff.net"
+add_source "http://gems.github.com"
+```
+
+If block is given, gem entries in block are wrapped into the source group.
+
+```ruby
+add_source "http://gems.github.com/" do
+  gem "rspec-rails"
+end
 ```
 
 ### environment/application(data=nil, options={}, &block)
@@ -91,16 +103,16 @@ Adds a line inside the `Application` class for `config/application.rb`.
 If `options[:env]` is specified, the line is appended to the corresponding file in `config/environments`.
 
 ```ruby
-environment 'config.action_mailer.default_url_options = {host: 'http://yourwebsite.example.com'}, env: 'production'
+environment 'config.action_mailer.default_url_options = {host: "http://yourwebsite.example.com"}', env: 'production'
 ```
 
 A block can be used in place of the `data` argument.
 
 ### vendor/lib/file/initializer(filename, data = nil, &block)
 
-Adds an initializer to the generated application’s `config/initializers` directory.
+Adds an initializer to the generated application's `config/initializers` directory.
 
-Lets say you like using `Object#not_nil?` and `Object#not_blank?`:
+Let's say you like using `Object#not_nil?` and `Object#not_blank?`:
 
 ```ruby
 initializer 'bloatlol.rb', <<-CODE
@@ -116,9 +128,9 @@ initializer 'bloatlol.rb', <<-CODE
 CODE
 ```
 
-Similarly `lib()` creates a file in the `lib/` directory and `vendor()` creates a file in the `vendor/` directory.
+Similarly, `lib()` creates a file in the `lib/` directory and `vendor()` creates a file in the `vendor/` directory.
 
-There is even `file()`, which accepts a relative path from `Rails.root` and creates all the directories/file needed:
+There is even `file()`, which accepts a relative path from `Rails.root` and creates all the directories/files needed:
 
 ```ruby
 file 'app/components/foo.rb', <<-CODE
@@ -127,7 +139,7 @@ file 'app/components/foo.rb', <<-CODE
 CODE
 ```
 
-That’ll create `app/components` directory and put `foo.rb` in there.
+That'll create the `app/components` directory and put `foo.rb` in there.
 
 ### rakefile(filename, data = nil, &block)
 
@@ -163,23 +175,35 @@ Executes an arbitrary command. Just like the backticks. Let's say you want to re
 run "rm README.rdoc"
 ```
 
-### rake(command, options = {})
+### rails_command(command, options = {})
 
-Runs the supplied rake tasks in the Rails application. Let's say you want to migrate the database:
+Runs the supplied command in the Rails application. Let's say you want to migrate the database:
 
 ```ruby
-rake "db:migrate"
+rails_command "db:migrate"
 ```
 
-You can also run rake tasks with a different Rails environment:
+You can also run commands with a different Rails environment:
 
 ```ruby
-rake "db:migrate", env: 'production'
+rails_command "db:migrate", env: 'production'
+```
+
+You can also run commands as a super-user:
+
+```ruby
+rails_command "log:clear", sudo: true
+```
+
+You can also run commands that should abort application generation if they fail:
+
+```ruby
+rails_command "db:migrate", abort_on_failure: true
 ```
 
 ### route(routing_code)
 
-Adds a routing entry to the `config/routes.rb` file. In above steps, we generated a person scaffold and also removed `README.rdoc`. Now to make `PeopleController#index` as the default page for the application:
+Adds a routing entry to the `config/routes.rb` file. In the steps above, we generated a person scaffold and also removed `README.rdoc`. Now, to make `PeopleController#index` the default page for the application:
 
 ```ruby
 route "root to: 'person#index'"
@@ -197,7 +221,7 @@ end
 
 ### ask(question)
 
-`ask()` gives you a chance to get some feedback from the user and use it in your templates. Lets say you want your user to name the new shiny library you’re adding:
+`ask()` gives you a chance to get some feedback from the user and use it in your templates. Let's say you want your user to name the new shiny library you're adding:
 
 ```ruby
 lib_name = ask("What do you want to call the shiny library ?")
@@ -211,10 +235,10 @@ CODE
 
 ### yes?(question) or no?(question)
 
-These methods let you ask questions from templates and decide the flow based on the user’s answer. Lets say you want to freeze rails only if the user want to:
+These methods let you ask questions from templates and decide the flow based on the user's answer. Let's say you want to prompt the user to run migrations:
 
 ```ruby
-rake("rails:freeze:gems") if yes?("Freeze rails gems?")
+rails_command("db:migrate") if yes?("Run database migrations?")
 # no?(question) acts just the opposite.
 ```
 
@@ -226,4 +250,39 @@ Rails templates let you run any git command:
 git :init
 git add: "."
 git commit: "-a -m 'Initial commit'"
+```
+
+### after_bundle(&block)
+
+Registers a callback to be executed after the gems are bundled and binstubs
+are generated. Useful for all generated files to version control:
+
+```ruby
+after_bundle do
+  git :init
+  git add: '.'
+  git commit: "-a -m 'Initial commit'"
+end
+```
+
+The callbacks gets executed even if `--skip-bundle` has been passed.
+
+Advanced Usage
+--------------
+
+The application template is evaluated in the context of a
+`Rails::Generators::AppGenerator` instance. It uses the
+[`apply`](https://rdoc.info/github/wycats/thor/Thor/Actions#apply-instance_method)
+action provided by Thor.
+
+This means you can extend and change the instance to match your needs.
+
+For example by overwriting the `source_paths` method to contain the
+location of your template. Now methods like `copy_file` will accept
+relative paths to your template's location.
+
+```ruby
+def source_paths
+  [__dir__]
+end
 ```

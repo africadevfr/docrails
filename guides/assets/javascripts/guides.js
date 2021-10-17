@@ -1,57 +1,88 @@
-function guideMenu(){
-  if (document.getElementById('guides').style.display == "none") {
-    document.getElementById('guides').style.display = "block";
-  } else {
-    document.getElementById('guides').style.display = "none";
+(function() {
+  "use strict";
+
+  this.wrap = function(elem, wrapper) {
+    elem.parentNode.insertBefore(wrapper, elem);
+    wrapper.appendChild(elem);
   }
-}
 
-$.fn.selectGuide = function(guide){
-  $("select", this).val(guide);
-}
+  this.unwrap = function(elem) {
+    var wrapper = elem.parentNode;
+    wrapper.parentNode.replaceChild(elem, wrapper);
+  }
 
-guidesIndex = {
-  bind: function(){
-    var currentGuidePath = window.location.pathname;
-    var currentGuide = currentGuidePath.substring(currentGuidePath.lastIndexOf("/")+1);
-    $(".guides-index-small").
-      on("change", "select", guidesIndex.navigate).
-      selectGuide(currentGuide);
-    $(".more-info-button:visible").click(function(e){
-      e.stopPropagation();
-      if($(".more-info-links").is(":visible")){
-        $(".more-info-links").addClass("s-hidden").unwrap();
-      } else {
-        $(".more-info-links").wrap("<div class='more-info-container'></div>").removeClass("s-hidden");
-      }
-      $(document).on("click", function(e){
-        var $button = $(".more-info-button");
-        var element;
+  this.createElement = function(tagName, className) {
+    var elem = document.createElement(tagName);
+    elem.classList.add(className);
+    return elem;
+  }
 
-        // Cross browser find the element that had the event
-        if (e.target) element = e.target;
-        else if (e.srcElement) element = e.srcElement;
+  // For old browsers
+  this.each = function(node, callback) {
+    var array = Array.prototype.slice.call(node);
+    for(var i = 0; i < array.length; i++) callback(array[i]);
+  }
 
-        // Defeat the older Safari bug:
-        // http://www.quirksmode.org/js/events_properties.html
-        if (element.nodeType == 3) element = element.parentNode;
+  // Viewable on local
+  if (window.location.protocol === "file:") Turbolinks.supported = false;
 
-        var $element = $(element);
+  document.addEventListener("turbolinks:load", function() {
+    var guidesMenu = document.getElementById("guidesMenu");
+    var guides     = document.getElementById("guides");
 
-        var $container = $element.parents(".more-info-container");
+    guidesMenu.addEventListener("click", function(e) {
+      e.preventDefault();
+      guides.classList.toggle("visible");
+    });
 
-        // We've captured a click outside the popup
-        if($container.length == 0){
-          $container = $button.next(".more-info-container");
-          $container.find(".more-info-links").addClass("s-hidden").unwrap();
-          $(document).off("click");
-        }
+    each(document.querySelectorAll("#guides a"), function(element) {
+      element.addEventListener("click", function(e) {
+        guides.classList.toggle("visible");
       });
     });
-  },
-  navigate: function(e){
-    var $list = $(e.target);
-    url = $list.val();
-    window.location = url;
-  }
-}
+
+    document.addEventListener("keyup", function(e) {
+      if (e.key === "Escape" && guides.classList.contains("visible")) {
+        guides.classList.remove("visible");
+      }
+    });
+
+    var guidesIndexItem   = document.querySelector("select.guides-index-item");
+    var currentGuidePath  = window.location.pathname;
+    guidesIndexItem.value = currentGuidePath.substring(currentGuidePath.lastIndexOf("/") + 1);
+
+    guidesIndexItem.addEventListener("change", function(e) {
+      if (Turbolinks.supported) {
+        Turbolinks.visit(e.target.value);
+      } else {
+        window.location = e.target.value;
+      }
+    });
+
+    var moreInfoButton = document.querySelector(".more-info-button");
+    var moreInfoLinks  = document.querySelector(".more-info-links");
+
+    moreInfoButton.addEventListener("click", function(e) {
+      e.preventDefault();
+
+      if (moreInfoLinks.classList.contains("s-hidden")) {
+        wrap(moreInfoLinks, createElement("div", "more-info-container"));
+        moreInfoLinks.classList.remove("s-hidden");
+      } else {
+        moreInfoLinks.classList.add("s-hidden");
+        unwrap(moreInfoLinks);
+      }
+    });
+
+    var clipboard = new ClipboardJS('.clipboard-button');
+    clipboard.on('success', function(e) {
+      var trigger = e.trigger;
+      var triggerLabel = trigger.innerHTML;
+      trigger.innerHTML = 'Copied!';
+      setTimeout(function(){
+        trigger.innerHTML = triggerLabel;
+      }, 3000);
+      e.clearSelection();
+    });
+  });
+}).call(this);

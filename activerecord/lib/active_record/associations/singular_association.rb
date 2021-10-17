@@ -1,11 +1,13 @@
+# frozen_string_literal: true
+
 module ActiveRecord
   module Associations
-    class SingularAssociation < Association #:nodoc:
+    class SingularAssociation < Association # :nodoc:
       # Implements the reader method, e.g. foo.bar for Foo.has_one :bar
-      def reader(force_reload = false)
-        if force_reload
-          klass.uncached { reload }
-        elsif !loaded? || stale_target?
+      def reader
+        ensure_klass_exists!
+
+        if !loaded? || stale_target?
           reload
         end
 
@@ -17,32 +19,32 @@ module ActiveRecord
         replace(record)
       end
 
-      def create(attributes = {}, &block)
-        create_record(attributes, &block)
-      end
-
-      def create!(attributes = {}, &block)
-        create_record(attributes, true, &block)
-      end
-
-      def build(attributes = {})
-        record = build_record(attributes)
-        yield(record) if block_given?
+      def build(attributes = nil, &block)
+        record = build_record(attributes, &block)
         set_new_record(record)
         record
       end
 
-      private
+      # Implements the reload reader method, e.g. foo.reload_bar for
+      # Foo.has_one :bar
+      def force_reload_reader
+        reload(true)
+        target
+      end
 
-        def create_scope
-          scope.scope_for_create.stringify_keys.except(klass.primary_key)
+      private
+        def scope_for_create
+          super.except!(klass.primary_key)
         end
 
         def find_target
-          scope.first.tap { |record| set_inverse_instance(record) }
+          if disable_joins
+            scope.first
+          else
+            super.first
+          end
         end
 
-        # Implemented by subclasses
         def replace(record)
           raise NotImplementedError, "Subclasses must implement a replace(record) method"
         end
@@ -51,9 +53,8 @@ module ActiveRecord
           replace(record)
         end
 
-        def create_record(attributes, raise_error = false)
-          record = build_record(attributes)
-          yield(record) if block_given?
+        def _create_record(attributes, raise_error = false, &block)
+          record = build_record(attributes, &block)
           saved = record.save
           set_new_record(record)
           raise RecordInvalid.new(record) if !saved && raise_error

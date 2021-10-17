@@ -1,6 +1,4 @@
-require 'fileutils'
-require 'uri'
-require 'set'
+# frozen_string_literal: true
 
 module ActionController
   # \Caching is a cheap way of speeding up slow applications by keeping the result of
@@ -8,15 +6,15 @@ module ActionController
   #
   # You can read more about each approach by clicking the modules below.
   #
-  # Note: To turn off all caching, set
-  #   config.action_controller.perform_caching = false.
+  # Note: To turn off all caching provided by Action Controller, set
+  #   config.action_controller.perform_caching = false
   #
   # == \Caching stores
   #
   # All the caching stores from ActiveSupport::Cache are available to be used as backends
   # for Action Controller caching.
   #
-  # Configuration examples (MemoryStore is the default):
+  # Configuration examples (FileStore is the default):
   #
   #   config.action_controller.cache_store = :memory_store
   #   config.action_controller.cache_store = :file_store, '/path/to/cache/directory'
@@ -25,65 +23,22 @@ module ActionController
   #   config.action_controller.cache_store = MyOwnStore.new('parameter')
   module Caching
     extend ActiveSupport::Concern
-    extend ActiveSupport::Autoload
-
-    eager_autoload do
-      autoload :Fragments
-    end
-
-    module ConfigMethods
-      def cache_store
-        config.cache_store
-      end
-
-      def cache_store=(store)
-        config.cache_store = ActiveSupport::Cache.lookup_store(store)
-      end
-
-      private
-        def cache_configured?
-          perform_caching && cache_store
-        end
-    end
-
-    include RackDelegation
-    include AbstractController::Callbacks
-
-    include ConfigMethods
-    include Fragments
 
     included do
-      extend ConfigMethods
-
-      config_accessor :default_static_extension
-      self.default_static_extension ||= '.html'
-
-      def self.page_cache_extension=(extension)
-        ActiveSupport::Deprecation.deprecation_warning(:page_cache_extension, :default_static_extension)
-        self.default_static_extension = extension
-      end
-
-      def self.page_cache_extension
-        ActiveSupport::Deprecation.deprecation_warning(:page_cache_extension, :default_static_extension)
-        default_static_extension
-      end
-
-      config_accessor :perform_caching
-      self.perform_caching = true if perform_caching.nil?
+      include AbstractController::Caching
     end
 
-    def caching_allowed?
-      request.get? && response.status == 200
-    end
+    private
+      def instrument_payload(key)
+        {
+          controller: controller_name,
+          action: action_name,
+          key: key
+        }
+      end
 
-    protected
-      # Convenience accessor.
-      def cache(key, options = {}, &block)
-        if cache_configured?
-          cache_store.fetch(ActiveSupport::Cache.expand_cache_key(key, :controller), options, &block)
-        else
-          yield
-        end
+      def instrument_name
+        "action_controller"
       end
   end
 end

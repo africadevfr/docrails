@@ -1,4 +1,7 @@
-require 'active_support/core_ext/enumerable'
+# frozen_string_literal: true
+
+require "mutex_m"
+require "active_support/core_ext/enumerable"
 
 module ActiveRecord
   # = Active Record Attribute Methods
@@ -7,6 +10,7 @@ module ActiveRecord
     include ActiveModel::AttributeMethods
 
     included do
+      initialize_generated_modules
       include Read
       include Write
       include BeforeTypeCast
@@ -17,30 +21,60 @@ module ActiveRecord
       include Serialization
     end
 
+    RESTRICTED_CLASS_METHODS = %w(private public protected allocate new name parent superclass)
+
+    class GeneratedAttributeMethods < Module # :nodoc:
+      include Mutex_m
+    end
+
+    class << self
+      def dangerous_attribute_methods # :nodoc:
+        @dangerous_attribute_methods ||= (
+          Base.instance_methods +
+          Base.private_instance_methods -
+          Base.superclass.instance_methods -
+          Base.superclass.private_instance_methods
+        ).map { |m| -m.to_s }.to_set.freeze
+      end
+    end
+
     module ClassMethods
+      def inherited(child_class) # :nodoc:
+        child_class.initialize_generated_modules
+        super
+      end
+
+      def initialize_generated_modules # :nodoc:
+        @generated_attribute_methods = const_set(:GeneratedAttributeMethods, GeneratedAttributeMethods.new)
+        private_constant :GeneratedAttributeMethods
+        @attribute_methods_generated = false
+        include @generated_attribute_methods
+
+        super
+      end
+
       # Generates all the attribute related methods for columns in the database
       # accessors, mutators and query methods.
       def define_attribute_methods # :nodoc:
-        # Use a mutex; we don't want two thread simaltaneously trying to define
+        return false if @attribute_methods_generated
+        # Use a mutex; we don't want two threads simultaneously trying to define
         # attribute methods.
-        @attribute_methods_mutex.synchronize do
-          return if attribute_methods_generated?
-          superclass.define_attribute_methods unless self == base_class
-          super(column_names)
+        generated_attribute_methods.synchronize do
+          return false if @attribute_methods_generated
+          superclass.define_attribute_methods unless base_class?
+          super(attribute_names)
           @attribute_methods_generated = true
         end
       end
 
-      def attribute_methods_generated? # :nodoc:
-        @attribute_methods_generated ||= false
-      end
-
       def undefine_attribute_methods # :nodoc:
-        super if attribute_methods_generated?
-        @attribute_methods_generated = false
+        generated_attribute_methods.synchronize do
+          super if defined?(@attribute_methods_generated) && @attribute_methods_generated
+          @attribute_methods_generated = false
+        end
       end
 
-      # Raises a <tt>ActiveRecord::DangerousAttributeError</tt> exception when an
+      # Raises an ActiveRecord::DangerousAttributeError exception when an
       # \Active \Record method is defined in the model, otherwise +false+.
       #
       #   class Person < ActiveRecord::Base
@@ -50,34 +84,52 @@ module ActiveRecord
       #   end
       #
       #   Person.instance_method_already_implemented?(:save)
-      #   # => ActiveRecord::DangerousAttributeError: save is defined by ActiveRecord
+      #   # => ActiveRecord::DangerousAttributeError: save is defined by Active Record. Check to make sure that you don't have an attribute or method with the same name.
       #
       #   Person.instance_method_already_implemented?(:name)
       #   # => false
       def instance_method_already_implemented?(method_name)
         if dangerous_attribute_method?(method_name)
-          raise DangerousAttributeError, "#{method_name} is defined by ActiveRecord"
+          raise DangerousAttributeError, "#{method_name} is defined by Active Record. Check to make sure that you don't have an attribute or method with the same name."
         end
 
         if superclass == Base
           super
         else
-          # If B < A and A defines its own attribute method, then we don't want to overwrite that.
-          defined = method_defined_within?(method_name, superclass, superclass.generated_attribute_methods)
-          defined && !ActiveRecord::Base.method_defined?(method_name) || super
+          # If ThisClass < ... < SomeSuperClass < ... < Base and SomeSuperClass
+          # defines its own attribute method, then we don't want to overwrite that.
+          defined = method_defined_within?(method_name, superclass, Base) &&
+            ! superclass.instance_method(method_name).owner.is_a?(GeneratedAttributeMethods)
+          defined || super
         end
       end
 
-      # A method name is 'dangerous' if it is already defined by Active Record, but
+      # A method name is 'dangerous' if it is already (re)defined by Active Record, but
       # not by any ancestors. (So 'puts' is not dangerous but 'save' is.)
       def dangerous_attribute_method?(name) # :nodoc:
-        method_defined_within?(name, Base)
+        ::ActiveRecord::AttributeMethods.dangerous_attribute_methods.include?(name.to_s)
       end
 
-      def method_defined_within?(name, klass, sup = klass.superclass) # :nodoc:
+      def method_defined_within?(name, klass, superklass = klass.superclass) # :nodoc:
         if klass.method_defined?(name) || klass.private_method_defined?(name)
-          if sup.method_defined?(name) || sup.private_method_defined?(name)
-            klass.instance_method(name).owner != sup.instance_method(name).owner
+          if superklass.method_defined?(name) || superklass.private_method_defined?(name)
+            klass.instance_method(name).owner != superklass.instance_method(name).owner
+          else
+            true
+          end
+        else
+          false
+        end
+      end
+
+      # A class method is 'dangerous' if it is already (re)defined by Active Record, but
+      # not by any ancestors. (So 'puts' is not dangerous but 'new' is.)
+      def dangerous_class_method?(method_name)
+        return true if RESTRICTED_CLASS_METHODS.include?(method_name.to_s)
+
+        if Base.respond_to?(method_name, true)
+          if Object.respond_to?(method_name, true)
+            Base.method(method_name).owner != Object.method(method_name).owner
           else
             true
           end
@@ -96,7 +148,7 @@ module ActiveRecord
       #   Person.attribute_method?(:age=)    # => true
       #   Person.attribute_method?(:nothing) # => false
       def attribute_method?(attribute)
-        super || (table_exists? && column_names.include?(attribute.to_s.sub(/=$/, '')))
+        super || (table_exists? && column_names.include?(attribute.to_s.delete_suffix("=")))
       end
 
       # Returns an array of column names as strings if it's not an abstract class and
@@ -109,75 +161,84 @@ module ActiveRecord
       #   # => ["id", "created_at", "updated_at", "name", "age"]
       def attribute_names
         @attribute_names ||= if !abstract_class? && table_exists?
-            column_names
-          else
-            []
-          end
-      end
-    end
-
-    # If we haven't generated any methods yet, generate them, then
-    # see if we've created the method we're looking for.
-    def method_missing(method, *args, &block) # :nodoc:
-      unless self.class.attribute_methods_generated?
-        self.class.define_attribute_methods
-
-        if respond_to_without_attributes?(method)
-          send(method, *args, &block)
+          attribute_types.keys
         else
-          super
-        end
-      else
-        super
-      end
-    end
-
-    def attribute_missing(match, *args, &block) # :nodoc:
-      if self.class.columns_hash[match.attr_name]
-        ActiveSupport::Deprecation.warn(
-          "The method `#{match.method_name}', matching the attribute `#{match.attr_name}' has " \
-          "dispatched through method_missing. This shouldn't happen, because `#{match.attr_name}' " \
-          "is a column of the table. If this error has happened through normal usage of Active " \
-          "Record (rather than through your own code or external libraries), please report it as " \
-          "a bug."
-        )
+          []
+        end.freeze
       end
 
-      super
+      # Returns true if the given attribute exists, otherwise false.
+      #
+      #   class Person < ActiveRecord::Base
+      #     alias_attribute :new_name, :name
+      #   end
+      #
+      #   Person.has_attribute?('name')     # => true
+      #   Person.has_attribute?('new_name') # => true
+      #   Person.has_attribute?(:age)       # => true
+      #   Person.has_attribute?(:nothing)   # => false
+      def has_attribute?(attr_name)
+        attr_name = attr_name.to_s
+        attr_name = attribute_aliases[attr_name] || attr_name
+        attribute_types.key?(attr_name)
+      end
+
+      def _has_attribute?(attr_name) # :nodoc:
+        attribute_types.key?(attr_name)
+      end
     end
 
     # A Person object with a name attribute can ask <tt>person.respond_to?(:name)</tt>,
     # <tt>person.respond_to?(:name=)</tt>, and <tt>person.respond_to?(:name?)</tt>
-    # which will all return +true+. It also define the attribute methods if they have
+    # which will all return +true+. It also defines the attribute methods if they have
     # not been generated.
     #
     #   class Person < ActiveRecord::Base
     #   end
     #
     #   person = Person.new
-    #   person.respond_to(:name)    # => true
-    #   person.respond_to(:name=)   # => true
-    #   person.respond_to(:name?)   # => true
-    #   person.respond_to('age')    # => true
-    #   person.respond_to('age=')   # => true
-    #   person.respond_to('age?')   # => true
-    #   person.respond_to(:nothing) # => false
+    #   person.respond_to?(:name)    # => true
+    #   person.respond_to?(:name=)   # => true
+    #   person.respond_to?(:name?)   # => true
+    #   person.respond_to?('age')    # => true
+    #   person.respond_to?('age=')   # => true
+    #   person.respond_to?('age?')   # => true
+    #   person.respond_to?(:nothing) # => false
     def respond_to?(name, include_private = false)
-      self.class.define_attribute_methods unless self.class.attribute_methods_generated?
-      super
+      return false unless super
+
+      # If the result is true then check for the select case.
+      # For queries selecting a subset of columns, return false for unselected columns.
+      # We check defined?(@attributes) not to issue warnings if called on objects that
+      # have been allocated but not yet initialized.
+      if defined?(@attributes)
+        if name = self.class.symbol_column_to_string(name.to_sym)
+          return _has_attribute?(name)
+        end
+      end
+
+      true
     end
 
     # Returns +true+ if the given attribute is in the attributes hash, otherwise +false+.
     #
     #   class Person < ActiveRecord::Base
+    #     alias_attribute :new_name, :name
     #   end
     #
     #   person = Person.new
-    #   person.has_attribute?(:name)    # => true
-    #   person.has_attribute?('age')    # => true
-    #   person.has_attribute?(:nothing) # => false
+    #   person.has_attribute?(:name)     # => true
+    #   person.has_attribute?(:new_name) # => true
+    #   person.has_attribute?('age')     # => true
+    #   person.has_attribute?(:nothing)  # => false
     def has_attribute?(attr_name)
-      @attributes.has_key?(attr_name.to_s)
+      attr_name = attr_name.to_s
+      attr_name = self.class.attribute_aliases[attr_name] || attr_name
+      @attributes.key?(attr_name)
+    end
+
+    def _has_attribute?(attr_name) # :nodoc:
+      @attributes.key?(attr_name)
     end
 
     # Returns an array of names for the attributes available on this object.
@@ -201,34 +262,29 @@ module ActiveRecord
     #   person.attributes
     #   # => {"id"=>3, "created_at"=>Sun, 21 Oct 2012 04:53:04, "updated_at"=>Sun, 21 Oct 2012 04:53:04, "name"=>"Francesco", "age"=>22}
     def attributes
-      attribute_names.each_with_object({}) { |name, attrs|
-        attrs[name] = read_attribute(name)
-      }
+      @attributes.to_hash
     end
 
     # Returns an <tt>#inspect</tt>-like string for the value of the
-    # attribute +attr_name+. String attributes are truncated upto 50
-    # characters, and Date and Time attributes are returned in the
-    # <tt>:db</tt> format. Other attributes return the value of
-    # <tt>#inspect</tt> without modification.
+    # attribute +attr_name+. String attributes are truncated up to 50
+    # characters. Other attributes return the value of <tt>#inspect</tt>
+    # without modification.
     #
     #   person = Person.create!(name: 'David Heinemeier Hansson ' * 3)
     #
     #   person.attribute_for_inspect(:name)
-    #   # => "\"David Heinemeier Hansson David Heinemeier Hansson D...\""
+    #   # => "\"David Heinemeier Hansson David Heinemeier Hansson ...\""
     #
     #   person.attribute_for_inspect(:created_at)
-    #   # => "\"2012-10-22 00:15:07\""
+    #   # => "\"2012-10-22 00:15:07.000000000 +0000\""
+    #
+    #   person.attribute_for_inspect(:tag_ids)
+    #   # => "[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]"
     def attribute_for_inspect(attr_name)
-      value = read_attribute(attr_name)
-
-      if value.is_a?(String) && value.length > 50
-        "#{value[0..50]}...".inspect
-      elsif value.is_a?(Date) || value.is_a?(Time)
-        %("#{value.to_s(:db)}")
-      else
-        value.inspect
-      end
+      attr_name = attr_name.to_s
+      attr_name = self.class.attribute_aliases[attr_name] || attr_name
+      value = _read_attribute(attr_name)
+      format_for_inspect(attr_name, value)
     end
 
     # Returns +true+ if the specified +attribute+ has been set by the user or by a
@@ -239,40 +295,25 @@ module ActiveRecord
     #   class Task < ActiveRecord::Base
     #   end
     #
-    #   person = Task.new(title: '', is_done: false)
-    #   person.attribute_present?(:title)   # => false
-    #   person.attribute_present?(:is_done) # => true
-    #   person.name = 'Francesco'
-    #   person.is_done = true
-    #   person.attribute_present?(:title)   # => true
-    #   person.attribute_present?(:is_done) # => true
-    def attribute_present?(attribute)
-      value = read_attribute(attribute)
+    #   task = Task.new(title: '', is_done: false)
+    #   task.attribute_present?(:title)   # => false
+    #   task.attribute_present?(:is_done) # => true
+    #   task.title = 'Buy milk'
+    #   task.is_done = true
+    #   task.attribute_present?(:title)   # => true
+    #   task.attribute_present?(:is_done) # => true
+    def attribute_present?(attr_name)
+      attr_name = attr_name.to_s
+      attr_name = self.class.attribute_aliases[attr_name] || attr_name
+      value = _read_attribute(attr_name)
       !value.nil? && !(value.respond_to?(:empty?) && value.empty?)
     end
 
-    # Returns the column object for the named attribute. Returns +nil+ if the
-    # named attribute not exists.
-    #
-    #   class Person < ActiveRecord::Base
-    #   end
-    #
-    #   person = Person.new
-    #   person.column_for_attribute(:name) # the result depends on the ConnectionAdapter
-    #   # => #<ActiveRecord::ConnectionAdapters::SQLite3Column:0x007ff4ab083980 @name="name", @sql_type="varchar(255)", @null=true, ...>
-    #
-    #   person.column_for_attribute(:nothing)
-    #   # => nil
-    def column_for_attribute(name)
-      # FIXME: should this return a null object for columns that don't exist?
-      self.class.columns_hash[name.to_s]
-    end
-
     # Returns the value of the attribute identified by <tt>attr_name</tt> after it has been typecast (for example,
-    # "2004-12-12" in a data column is cast to a date object, like Date.new(2004, 12, 12)). It raises
+    # "2004-12-12" in a date column is cast to a date object, like Date.new(2004, 12, 12)). It raises
     # <tt>ActiveModel::MissingAttributeError</tt> if the identified attribute is missing.
     #
-    # Alias for the <tt>read_attribute</tt> method.
+    # Note: +:id+ is always present.
     #
     #   class Person < ActiveRecord::Base
     #     belongs_to :organization
@@ -290,7 +331,7 @@ module ActiveRecord
     end
 
     # Updates the attribute identified by <tt>attr_name</tt> with the specified +value+.
-    # (Alias for the protected <tt>write_attribute</tt> method).
+    # (Alias for the protected #write_attribute method).
     #
     #   class Person < ActiveRecord::Base
     #   end
@@ -298,81 +339,91 @@ module ActiveRecord
     #   person = Person.new
     #   person[:age] = '22'
     #   person[:age] # => 22
-    #   person[:age] # => Fixnum
+    #   person[:age].class # => Integer
     def []=(attr_name, value)
       write_attribute(attr_name, value)
     end
 
-    protected
-
-    def clone_attributes(reader_method = :read_attribute, attributes = {}) # :nodoc:
-      attribute_names.each do |name|
-        attributes[name] = clone_attribute_value(reader_method, name)
-      end
-      attributes
-    end
-
-    def clone_attribute_value(reader_method, attribute_name) # :nodoc:
-      value = send(reader_method, attribute_name)
-      value.duplicable? ? value.clone : value
-    rescue TypeError, NoMethodError
-      value
-    end
-
-    def arel_attributes_with_values_for_create(attribute_names) # :nodoc:
-      arel_attributes_with_values(attributes_for_create(attribute_names))
-    end
-
-    def arel_attributes_with_values_for_update(attribute_names) # :nodoc:
-      arel_attributes_with_values(attributes_for_update(attribute_names))
-    end
-
-    def attribute_method?(attr_name) # :nodoc:
-      defined?(@attributes) && @attributes.include?(attr_name)
+    # Returns the name of all database fields which have been read from this
+    # model. This can be useful in development mode to determine which fields
+    # need to be selected. For performance critical pages, selecting only the
+    # required fields can be an easy performance win (assuming you aren't using
+    # all of the fields on the model).
+    #
+    # For example:
+    #
+    #   class PostsController < ActionController::Base
+    #     after_action :print_accessed_fields, only: :index
+    #
+    #     def index
+    #       @posts = Post.all
+    #     end
+    #
+    #     private
+    #
+    #     def print_accessed_fields
+    #       p @posts.first.accessed_fields
+    #     end
+    #   end
+    #
+    # Which allows you to quickly change your code to:
+    #
+    #   class PostsController < ActionController::Base
+    #     def index
+    #       @posts = Post.select(:id, :title, :author_id, :updated_at)
+    #     end
+    #   end
+    def accessed_fields
+      @attributes.accessed
     end
 
     private
-
-    # Returns a Hash of the Arel::Attributes and attribute values that have been
-    # type casted for use in an Arel insert/update method.
-    def arel_attributes_with_values(attribute_names)
-      attrs = {}
-      arel_table = self.class.arel_table
-
-      attribute_names.each do |name|
-        attrs[arel_table[name]] = typecasted_attribute_value(name)
+      def attribute_method?(attr_name)
+        # We check defined? because Syck calls respond_to? before actually calling initialize.
+        defined?(@attributes) && @attributes.key?(attr_name)
       end
-      attrs
-    end
 
-    # Filters the primary keys and readonly attributes from the attribute names.
-    def attributes_for_update(attribute_names)
-      attribute_names.select do |name|
-        column_for_attribute(name) && !pk_attribute?(name) && !readonly_attribute?(name)
+      def attributes_with_values(attribute_names)
+        attribute_names.index_with { |name| @attributes[name] }
       end
-    end
 
-    # Filters out the primary keys, from the attribute names, when the primary
-    # key is to be generated (e.g. the id attribute has no value).
-    def attributes_for_create(attribute_names)
-      attribute_names.select do |name|
-        column_for_attribute(name) && !(pk_attribute?(name) && id.nil?)
+      # Filters the primary keys, readonly attributes and virtual columns from the attribute names.
+      def attributes_for_update(attribute_names)
+        attribute_names &= self.class.column_names
+        attribute_names.delete_if do |name|
+          self.class.readonly_attribute?(name) ||
+            column_for_attribute(name).virtual?
+        end
       end
-    end
 
-    def readonly_attribute?(name)
-      self.class.readonly_attributes.include?(name)
-    end
+      # Filters out the virtual columns and also primary keys, from the attribute names, when the primary
+      # key is to be generated (e.g. the id attribute has no value).
+      def attributes_for_create(attribute_names)
+        attribute_names &= self.class.column_names
+        attribute_names.delete_if do |name|
+          (pk_attribute?(name) && id.nil?) ||
+            column_for_attribute(name).virtual?
+        end
+      end
 
-    def pk_attribute?(name)
-      column_for_attribute(name).primary
-    end
+      def format_for_inspect(name, value)
+        if value.nil?
+          value.inspect
+        else
+          inspected_value = if value.is_a?(String) && value.length > 50
+            "#{value[0, 50]}...".inspect
+          elsif value.is_a?(Date) || value.is_a?(Time)
+            %("#{value.to_s(:inspect)}")
+          else
+            value.inspect
+          end
 
-    def typecasted_attribute_value(name)
-      # FIXME: we need @attributes to be used consistently.
-      # If the values stored in @attributes were already typecasted, this code
-      # could be simplified
-      read_attribute(name)
-    end
+          inspection_filter.filter_param(name, inspected_value)
+        end
+      end
+
+      def pk_attribute?(name)
+        name == @primary_key
+      end
   end
 end

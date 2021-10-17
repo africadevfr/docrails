@@ -1,71 +1,61 @@
-require 'active_record/associations'
+# frozen_string_literal: true
 
-module ActiveRecord::Associations::Builder
-  class CollectionAssociation < Association #:nodoc:
+require "active_record/associations"
 
+module ActiveRecord::Associations::Builder # :nodoc:
+  class CollectionAssociation < Association # :nodoc:
     CALLBACKS = [:before_add, :after_add, :before_remove, :after_remove]
 
-    def valid_options
-      super + [:table_name, :finder_sql, :counter_sql, :before_add, :after_add, :before_remove, :after_remove]
+    def self.valid_options(options)
+      super + [:before_add, :after_add, :before_remove, :after_remove, :extend]
     end
 
-    attr_reader :block_extension, :extension_module
-
-    def initialize(*args, &extension)
-      super(*args)
-      @block_extension = extension
+    def self.define_callbacks(model, reflection)
+      super
+      name    = reflection.name
+      options = reflection.options
+      CALLBACKS.each { |callback_name|
+        define_callback(model, callback_name, name, options)
+      }
     end
 
-    def build
-      show_deprecation_warnings
-      wrap_block_extension
-      reflection = super
-      CALLBACKS.each { |callback_name| define_callback(callback_name) }
-      reflection
-    end
-
-    def writable?
-      true
-    end
-
-    def show_deprecation_warnings
-      [:finder_sql, :counter_sql].each do |name|
-        if options.include? name
-          ActiveSupport::Deprecation.warn("The :#{name} association option is deprecated. Please find an alternative (such as using scopes).")
-        end
+    def self.define_extensions(model, name, &block)
+      if block_given?
+        extension_module_name = "#{name.to_s.camelize}AssociationExtension"
+        extension = Module.new(&block)
+        model.const_set(extension_module_name, extension)
       end
     end
 
-    def wrap_block_extension
-      if block_extension
-        @extension_module = mod = Module.new(&block_extension)
-        silence_warnings do
-          model.parent.const_set(extension_module_name, mod)
-        end
-
-        prev_scope = @scope
-
-        if prev_scope
-          @scope = proc { |owner| instance_exec(owner, &prev_scope).extending(mod) }
-        else
-          @scope = proc { extending(mod) }
-        end
-      end
-    end
-
-    def extension_module_name
-      @extension_module_name ||= "#{model.name.demodulize}#{name.to_s.camelize}AssociationExtension"
-    end
-
-    def define_callback(callback_name)
+    def self.define_callback(model, callback_name, name, options)
       full_callback_name = "#{callback_name}_for_#{name}"
 
-      # TODO : why do i need method_defined? I think its because of the inheritance chain
-      model.class_attribute full_callback_name.to_sym unless model.method_defined?(full_callback_name)
-      model.send("#{full_callback_name}=", Array(options[callback_name.to_sym]))
+      callback_values = Array(options[callback_name.to_sym])
+      method_defined = model.respond_to?(full_callback_name)
+
+      # If there are no callbacks, we must also check if a superclass had
+      # previously defined this association
+      return if callback_values.empty? && !method_defined
+
+      unless method_defined
+        model.class_attribute(full_callback_name, instance_accessor: false, instance_predicate: false)
+      end
+
+      callbacks = callback_values.map do |callback|
+        case callback
+        when Symbol
+          ->(method, owner, record) { owner.send(callback, record) }
+        when Proc
+          ->(method, owner, record) { callback.call(owner, record) }
+        else
+          ->(method, owner, record) { callback.send(method, owner, record) }
+        end
+      end
+      model.send "#{full_callback_name}=", callbacks
     end
 
-    def define_readers
+    # Defines the setter and getter methods for the collection_singular_ids.
+    def self.define_readers(mixin, name)
       super
 
       mixin.class_eval <<-CODE, __FILE__, __LINE__ + 1
@@ -75,7 +65,7 @@ module ActiveRecord::Associations::Builder
       CODE
     end
 
-    def define_writers
+    def self.define_writers(mixin, name)
       super
 
       mixin.class_eval <<-CODE, __FILE__, __LINE__ + 1
@@ -84,5 +74,7 @@ module ActiveRecord::Associations::Builder
         end
       CODE
     end
+
+    private_class_method :valid_options, :define_callback, :define_extensions, :define_readers, :define_writers
   end
 end

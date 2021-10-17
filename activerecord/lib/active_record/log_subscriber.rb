@@ -1,13 +1,17 @@
+# frozen_string_literal: true
+
 module ActiveRecord
   class LogSubscriber < ActiveSupport::LogSubscriber
     IGNORE_PAYLOAD_NAMES = ["SCHEMA", "EXPLAIN"]
 
+    class_attribute :backtrace_cleaner, default: ActiveSupport::BacktraceCleaner.new
+
     def self.runtime=(value)
-      Thread.current[:active_record_sql_runtime] = value
+      ActiveRecord::RuntimeRegistry.sql_runtime = value
     end
 
     def self.runtime
-      Thread.current[:active_record_sql_runtime] ||= 0
+      ActiveRecord::RuntimeRegistry.sql_runtime ||= 0
     end
 
     def self.reset_runtime
@@ -15,19 +19,14 @@ module ActiveRecord
       rt
     end
 
-    def initialize
-      super
-      @odd_or_even = false
-    end
+    def strict_loading_violation(event)
+      debug do
+        owner = event.payload[:owner]
+        association = event.payload[:reflection].klass
+        name = event.payload[:reflection].name
 
-    def render_bind(column, value)
-      if column.type == :binary
-        rendered_value = "<#{value.bytesize} bytes of binary data>"
-      else
-        rendered_value = value
+        color("Strict loading violation: #{owner} is marked for strict loading. The #{association} association named :#{name} cannot be lazily loaded.", RED)
       end
-
-      [column.name, rendered_value]
     end
 
     def sql(event)
@@ -38,42 +37,104 @@ module ActiveRecord
 
       return if IGNORE_PAYLOAD_NAMES.include?(payload[:name])
 
-      name  = "#{payload[:name]} (#{event.duration.round(1)}ms)"
-      sql   = payload[:sql].squeeze(' ')
+      name = if payload[:async]
+        "ASYNC #{payload[:name]} (#{payload[:lock_wait].round(1)}ms) (db time #{event.duration.round(1)}ms)"
+      else
+        "#{payload[:name]} (#{event.duration.round(1)}ms)"
+      end
+      name  = "CACHE #{name}" if payload[:cached]
+      sql   = payload[:sql]
       binds = nil
 
-      unless (payload[:binds] || []).empty?
-        binds = "  " + payload[:binds].map { |col,v|
-          render_bind(col, v)
-        }.inspect
+      if payload[:binds]&.any?
+        casted_params = type_casted_binds(payload[:type_casted_binds])
+
+        binds = []
+        payload[:binds].each_with_index do |attr, i|
+          binds << render_bind(attr, casted_params[i])
+        end
+        binds = binds.inspect
+        binds.prepend("  ")
       end
 
-      if odd?
-        name = color(name, CYAN, true)
-        sql  = color(sql, nil, true)
-      else
-        name = color(name, MAGENTA, true)
-      end
+      name = colorize_payload_name(name, payload[:name])
+      sql  = color(sql, sql_color(sql), true) if colorize_logging
 
       debug "  #{name}  #{sql}#{binds}"
     end
 
-    def identity(event)
-      return unless logger.debug?
+    private
+      def type_casted_binds(casted_binds)
+        casted_binds.respond_to?(:call) ? casted_binds.call : casted_binds
+      end
 
-      name = color(event.payload[:name], odd? ? CYAN : MAGENTA, true)
-      line = odd? ? color(event.payload[:line], nil, true) : event.payload[:line]
+      def render_bind(attr, value)
+        case attr
+        when ActiveModel::Attribute
+          if attr.type.binary? && attr.value
+            value = "<#{attr.value_for_database.to_s.bytesize} bytes of binary data>"
+          end
+        when Array
+          attr = attr.first
+        else
+          attr = nil
+        end
 
-      debug "  #{name}  #{line}"
-    end
+        [attr&.name, value]
+      end
 
-    def odd?
-      @odd_or_even = !@odd_or_even
-    end
+      def colorize_payload_name(name, payload_name)
+        if payload_name.blank? || payload_name == "SQL" # SQL vs Model Load/Exists
+          color(name, MAGENTA, true)
+        else
+          color(name, CYAN, true)
+        end
+      end
 
-    def logger
-      ActiveRecord::Base.logger
-    end
+      def sql_color(sql)
+        case sql
+        when /\A\s*rollback/mi
+          RED
+        when /select .*for update/mi, /\A\s*lock/mi
+          WHITE
+        when /\A\s*select/i
+          BLUE
+        when /\A\s*insert/i
+          GREEN
+        when /\A\s*update/i
+          YELLOW
+        when /\A\s*delete/i
+          RED
+        when /transaction\s*\Z/i
+          CYAN
+        else
+          MAGENTA
+        end
+      end
+
+      def logger
+        ActiveRecord::Base.logger
+      end
+
+      def debug(progname = nil, &block)
+        return unless super
+
+        if ActiveRecord.verbose_query_logs
+          log_query_source
+        end
+      end
+
+      def log_query_source
+        source = extract_query_source_location(caller)
+
+        if source
+          logger.debug("  ↳ #{source}")
+        end
+      end
+
+      def extract_query_source_location(locations)
+        backtrace_cleaner.clean(locations.lazy).first
+      end
   end
 end
 

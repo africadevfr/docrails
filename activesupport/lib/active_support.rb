@@ -1,5 +1,7 @@
+# frozen_string_literal: true
+
 #--
-# Copyright (c) 2005-2013 David Heinemeier Hansson
+# Copyright (c) 2005-2021 David Heinemeier Hansson
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -21,31 +23,41 @@
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #++
 
-require 'securerandom'
+require "securerandom"
 require "active_support/dependencies/autoload"
 require "active_support/version"
 require "active_support/logger"
 require "active_support/lazy_load_hooks"
+require "active_support/core_ext/date_and_time/compatibility"
 
 module ActiveSupport
   extend ActiveSupport::Autoload
 
   autoload :Concern
+  autoload :ActionableError
+  autoload :ConfigurationFile
+  autoload :CurrentAttributes
   autoload :Dependencies
   autoload :DescendantsTracker
+  autoload :ExecutionWrapper
+  autoload :Executor
   autoload :FileUpdateChecker
+  autoload :EventedFileUpdateChecker
+  autoload :ForkTracker
   autoload :LogSubscriber
   autoload :Notifications
+  autoload :Reloader
+  autoload :SecureCompareRotator
 
   eager_autoload do
     autoload :BacktraceCleaner
-    autoload :BasicObject
     autoload :ProxyObject
     autoload :Benchmarkable
     autoload :Cache
     autoload :Callbacks
     autoload :Configurable
     autoload :Deprecation
+    autoload :Digest
     autoload :Gzip
     autoload :Inflector
     autoload :JSON
@@ -53,17 +65,57 @@ module ActiveSupport
     autoload :MessageEncryptor
     autoload :MessageVerifier
     autoload :Multibyte
+    autoload :NumberHelper
     autoload :OptionMerger
     autoload :OrderedHash
     autoload :OrderedOptions
     autoload :StringInquirer
+    autoload :EnvironmentInquirer
     autoload :TaggedLogging
     autoload :XmlMini
+    autoload :ArrayInquirer
   end
 
   autoload :Rescuable
   autoload :SafeBuffer, "active_support/core_ext/string/output_safety"
   autoload :TestCase
+
+  def self.eager_load!
+    super
+
+    NumberHelper.eager_load!
+  end
+
+  cattr_accessor :test_order # :nodoc:
+  cattr_accessor :test_parallelization_threshold, default: 50 # :nodoc:
+
+  def self.cache_format_version
+    Cache.format_version
+  end
+
+  def self.cache_format_version=(value)
+    Cache.format_version = value
+  end
+
+  def self.to_time_preserves_timezone
+    DateAndTime::Compatibility.preserve_timezone
+  end
+
+  def self.to_time_preserves_timezone=(value)
+    DateAndTime::Compatibility.preserve_timezone = value
+  end
+
+  def self.utc_to_local_returns_utc_offset_times
+    DateAndTime::Compatibility.utc_to_local_returns_utc_offset_times
+  end
+
+  def self.utc_to_local_returns_utc_offset_times=(value)
+    DateAndTime::Compatibility.utc_to_local_returns_utc_offset_times = value
+  end
+
+  def self.current_attributes_use_thread_variables=(value)
+    CurrentAttributes._use_thread_variables = value
+  end
 end
 
 autoload :I18n, "active_support/i18n"

@@ -1,71 +1,88 @@
+# frozen_string_literal: true
+
+require "active_support/core_ext/object/try"
+
 module ActiveRecord
   module AttributeMethods
     module TimeZoneConversion
-      class Type # :nodoc:
-        def initialize(column)
-          @column = column
+      class TimeZoneConverter < DelegateClass(Type::Value) # :nodoc:
+        def self.new(subtype)
+          self === subtype ? subtype : super
         end
 
-        def type_cast(value)
-          value = @column.type_cast(value)
-          value.acts_like?(:time) ? value.in_time_zone : value
+        def deserialize(value)
+          convert_time_to_time_zone(super)
         end
 
-        def type
-          @column.type
+        def cast(value)
+          return if value.nil?
+
+          if value.is_a?(Hash)
+            set_time_zone_without_conversion(super)
+          elsif value.respond_to?(:in_time_zone)
+            begin
+              super(user_input_in_time_zone(value)) || super
+            rescue ArgumentError
+              nil
+            end
+          elsif value.respond_to?(:infinite?) && value.infinite?
+            value
+          else
+            map_avoiding_infinite_recursion(super) { |v| cast(v) }
+          end
         end
+
+        private
+          def convert_time_to_time_zone(value)
+            return if value.nil?
+
+            if value.acts_like?(:time)
+              value.in_time_zone
+            elsif value.respond_to?(:infinite?) && value.infinite?
+              value
+            else
+              map_avoiding_infinite_recursion(value) { |v| convert_time_to_time_zone(v) }
+            end
+          end
+
+          def set_time_zone_without_conversion(value)
+            ::Time.zone.local_to_utc(value).try(:in_time_zone) if value
+          end
+
+          def map_avoiding_infinite_recursion(value)
+            map(value) do |v|
+              if value.equal?(v)
+                nil
+              else
+                yield(v)
+              end
+            end
+          end
       end
 
       extend ActiveSupport::Concern
 
       included do
-        mattr_accessor :time_zone_aware_attributes, instance_writer: false
-        self.time_zone_aware_attributes = false
-
-        class_attribute :skip_time_zone_conversion_for_attributes, instance_writer: false
-        self.skip_time_zone_conversion_for_attributes = []
+        class_attribute :time_zone_aware_attributes, instance_writer: false, default: false
+        class_attribute :skip_time_zone_conversion_for_attributes, instance_writer: false, default: []
+        class_attribute :time_zone_aware_types, instance_writer: false, default: [ :datetime, :time ]
       end
 
-      module ClassMethods
-        protected
-        # Defined for all +datetime+ and +timestamp+ attributes when +time_zone_aware_attributes+ are enabled.
-        # This enhanced write method will automatically convert the time passed to it to the zone stored in Time.zone.
-        def define_method_attribute=(attr_name)
-          if create_time_zone_conversion_attribute?(attr_name, columns_hash[attr_name])
-            method_body, line = <<-EOV, __LINE__ + 1
-              def #{attr_name}=(original_time)
-                original_time = nil if original_time.blank?
-                time = original_time
-                unless time.acts_like?(:time)
-                  time = time.is_a?(String) ? Time.zone.parse(time) : time.to_time rescue time
-                end
-                zoned_time   = time && time.in_time_zone rescue nil
-                rounded_time = round_usec(zoned_time)
-                rounded_value = round_usec(read_attribute("#{attr_name}"))
-                if (rounded_value != rounded_time) || (!rounded_value && original_time)
-                  write_attribute("#{attr_name}", original_time)
-                  #{attr_name}_will_change!
-                  @attributes_cache["#{attr_name}"] = zoned_time
-                end
-              end
-            EOV
-            generated_attribute_methods.module_eval(method_body, __FILE__, line)
-          else
-            super
+      module ClassMethods # :nodoc:
+        def define_attribute(name, cast_type, **)
+          if create_time_zone_conversion_attribute?(name, cast_type)
+            cast_type = TimeZoneConverter.new(cast_type)
           end
+          super
         end
 
         private
-        def create_time_zone_conversion_attribute?(name, column)
-          time_zone_aware_attributes &&
-            !self.skip_time_zone_conversion_for_attributes.include?(name.to_sym) &&
-            [:datetime, :timestamp].include?(column.type)
-        end
-      end
+          def create_time_zone_conversion_attribute?(name, cast_type)
+            enabled_for_column = time_zone_aware_attributes &&
+              !skip_time_zone_conversion_for_attributes.include?(name.to_sym)
 
-      private
-      def round_usec(value)
-        value.change(usec: 0) if value
+            enabled_for_column && time_zone_aware_types.include?(cast_type.type)
+          end
       end
     end
   end
