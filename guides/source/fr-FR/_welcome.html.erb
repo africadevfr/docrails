@@ -1,0 +1,31 @@
+<h2>Ruby on Rails Guides (<%= @edge ? @edge[0, 7] : @version %>)</h2>
+
+<% if @edge %>
+<p>
+  Les <b>Edge Guides</b>, sont sur <a href="https://github.com/rails/rails/tree/<%= @edge %>">main@<%= @edge[0, 7] %></a>.
+</p>
+<p>
+  Si vous cherchez les guides de la version stable, aller plutôt sur
+  <a href="https://guides.rubyonrails.org">https://guides.rubyonrails.org</a>.
+</p>
+<% else %>
+<p>
+  Les nouveaux guides pour Rails 7.0 sont sur <a href="https://github.com/rails/rails/tree/<%= @version %>"><%= @version %></a>.
+  Ces guides vous permettront d'être immédiatement productifs sur Rails, et vous aideront à appréhender l'ensemble des fonctionnalités.
+</p>
+<% end %>
+<p>
+Les guides des versions précédentes sont sur :
+<a href="https://guides.rubyonrails.org/v6.1/">Rails 6.1</a>,
+<a href="https://guides.rubyonrails.org/v6.0/">Rails 6.0</a>,
+<a href="https://guides.rubyonrails.org/v5.2/">Rails 5.2</a>,
+<a href="https://guides.rubyonrails.org/v5.1/">Rails 5.1</a>,
+<a href="https://guides.rubyonrails.org/v5.0/">Rails 5.0</a>,
+<a href="https://guides.rubyonrails.org/v4.2/">Rails 4.2</a>,
+<a href="https://guides.rubyonrails.org/v4.1/">Rails 4.1</a>,
+<a href="https://guides.rubyonrails.org/v4.0/">Rails 4.0</a>,
+<a href="https://guides.rubyonrails.org/v3.2/">Rails 3.2</a>,
+<a href="https://guides.rubyonrails.org/v3.1/">Rails 3.1</a>,
+<a href="https://guides.rubyonrails.org/v3.0/">Rails 3.0</a>, et
+<a href="https://guides.rubyonrails.org/v2.3/">Rails 2.3</a>.
+</p>
