@@ -1,202 +1,153 @@
 **DO NOT READ THIS FILE ON GITHUB, GUIDES ARE PUBLISHED ON https://guides.rubyonrails.org.**
 
-Getting Started with Rails
-==========================
+Débuter avec Rails
+==================
+Ce guide couvre le démarrage avec Ruby on Rails.
 
-This guide covers getting up and running with Ruby on Rails.
+Après avoir lu ce guide, vous saurez : 
 
-After reading this guide, you will know:
+* Comment installer Rails, créer une nouvelle application Rails et connecter votre application à une base de données.
+  
+* La structure générale d'une application Rails.
 
-* How to install Rails, create a new Rails application, and connect your
-  application to a database.
-* The general layout of a Rails application.
-* The basic principles of MVC (Model, View, Controller) and RESTful design.
-* How to quickly generate the starting pieces of a Rails application.
-
+* Les principes de base de la conception MVC (Model, View, Controller) et RESTful design.
+ 
+* Comment générer rapidement l'architecture de départ d'une application Rails.
 --------------------------------------------------------------------------------
 
-Guide Assumptions
------------------
+Hypothèses du guide
+-------------------
 
-This guide is designed for beginners who want to get started with creating a Rails
-application from scratch. It does not assume that you have any prior experience
-with Rails.
+Ce guide est conçu pour les débutants qui souhaitent commencer à créer une application Rails à partir de zéro. Il ne suppose pas que vous ayez une expérience préalable de Rails.
 
-Rails is a web application framework running on the Ruby programming language.
-If you have no prior experience with Ruby, you will find a very steep learning
-curve diving straight into Rails. There are several curated lists of online resources
-for learning Ruby:
+Rails est un framework d'application web fonctionnant sur le langage de programmation Ruby. Si vous n'avez aucune expérience préalable avec Ruby, vous aurez un apprentissage rapide vous plongeant directement dans Rails. Il existe plusieurs ressources en ligne pour apprendre Ruby:
 
-* [Official Ruby Programming Language website](https://www.ruby-lang.org/en/documentation/)
-* [List of Free Programming Books](https://github.com/EbookFoundation/free-programming-books/blob/master/books/free-programming-books-langs.md#ruby)
+* [Site officiel du langage de programmation Ruby](https://www.ruby-lang.org/en/documentation/)
+* [Liste des livres de programmation gratuits](https://github.com/EbookFoundation/free-programming-books/blob/master/books/free-programming-books-langs.md#ruby)
 
-Be aware that some resources, while still excellent, cover older versions of
-Ruby, and may not include some syntax that you will see in day-to-day
-development with Rails.
+Sachez que certaines ressources, bien qu’excellentes, couvrent les anciennes versions de Ruby et peuvent ne pas inclure une syntaxe que vous verrez dans le développement quotidien avec Rails.
 
-What is Rails?
+Qu’est-ce que Rails?
 --------------
 
-Rails is a web application development framework written in the Ruby programming language.
-It is designed to make programming web applications easier by making assumptions
-about what every developer needs to get started. It allows you to write less
-code while accomplishing more than many other languages and frameworks.
-Experienced Rails developers also report that it makes web application
-development more fun.
+Rails est un framework de développement d’applications web écrit dans le langage de programmation Ruby. Il est conçu pour faciliter la programmation d’applications Web en faisant des hypothèses sur ce dont chaque développeur a besoin pour commencer. Il vous permet d’écrire moins de code tout en accomplissant plus que de nombreux autres langages et frameworks. Les développeurs expérimentés de Rails signalent également que cela rend le développement d’applications Web plus amusant.
 
-Rails is opinionated software. It makes the assumption that there is a "best"
-way to do things, and it's designed to encourage that way - and in some cases to
-discourage alternatives. If you learn "The Rails Way" you'll probably discover a
-tremendous increase in productivity. If you persist in bringing old habits from
-other languages to your Rails development, and trying to use patterns you
-learned elsewhere, you may have a less happy experience.
+Rails est un logiciel d’opinion. Il fait l’hypothèse qu’il existe une « meilleure » façon de faire les choses, et il est conçu pour encourager cette façon - et dans certains cas pour décourager les alternatives. Si vous apprenez « La philosophie de Rails », vous découvrirez probablement une énorme augmentation de la productivité. Si vous persistez à apporter de vieilles habitudes d’autres langues à votre développement Rails et à essayer d’utiliser des modèles que vous avez appris ailleurs, vous aurez peut-être une expérience moins heureuse.
 
-The Rails philosophy includes two major guiding principles:
+La philosophie de Rails comprend deux grands principes directeurs :
 
-* **Don't Repeat Yourself:** DRY is a principle of software development which
-  states that "Every piece of knowledge must have a single, unambiguous, authoritative
-  representation within a system". By not writing the same information over and over
-  again, our code is more maintainable, more extensible, and less buggy.
-* **Convention Over Configuration:** Rails has opinions about the best way to do many
-  things in a web application, and defaults to this set of conventions, rather than
-  require that you specify minutiae through endless configuration files.
+* **Ne vous répétez pas:** DRY est un principe de développement logiciel qui stipule que « Chaque élément de connaissance doit avoir une
+  représentation unique, sans ambiguïté et faisant autorité au sein d’un système ».En n’écrivant pas les mêmes informations encore et encore, notre code est plus maintenable, plus extensible et moins bogué.
 
-Creating a New Rails Project
-----------------------------
+* **Convention Over Configuration:** Rails a des opinions sur la meilleure façon de faire beaucoup de choses dans une application Web, et utilise par
+  défaut cet ensemble de conventions, plutôt que d’exiger que vous spécifiez des détails à travers des fichiers de configuration sans fin.
 
-The best way to read this guide is to follow it step by step. All steps are
-essential to run this example application and no additional code or steps are
-needed.
+Création d'un nouveu projet Rails
+---------------------------------
 
-By following along with this guide, you'll create a Rails project called
-`blog`, a (very) simple weblog. Before you can start building the application,
-you need to make sure that you have Rails itself installed.
+La meilleure façon de lire ce guide est de le suivre étape par étape.Toutes les étapes sont essentielles pour exécuter cet exemple d’application et aucun code ou étapes supplémentaires n’est nécessaire.
 
-NOTE: The examples below use `$` to represent your terminal prompt in a UNIX-like OS,
-though it may have been customized to appear differently. If you are using Windows,
-your prompt will look something like `C:\source_code>`.
+En suivant ce guide, vous allez créer un projet Rails appelé 'blog', un weblog (très) simple.Avant de pouvoir commencer à créer l’application, vous devez vous assurer que Rails lui-même est installé.
 
-### Installing Rails
+NOTE: Les exemples ci-dessous utilisent '$' pour représenter votre invite de terminal dans un système d’exploitation de type UNIX, bien qu’il ait pu être personnalisé pour apparaître différemment.Si vous utilisez Windows, votre invite ressemblera à 'C:\source_code>'.
 
-Before you install Rails, you should check to make sure that your system has the
-proper prerequisites installed. These include:
+### Installation de Rails
+
+Avant d’installer Rails, vous devez vérifier que les conditions préalables appropriées sont installées sur votre système. Il s’agit notamment des éléments suivants :
 
 * Ruby
 * SQLite3
 * Node.js
 * Yarn
 
-#### Installing Ruby
+#### Installation de Ruby
 
-Open up a command line prompt. On macOS open Terminal.app; on Windows choose
-"Run" from your Start menu and type `cmd.exe`. Any commands prefaced with a
-dollar sign `$` should be run in the command line. Verify that you have a
-current version of Ruby installed:
+Ouvrez une invite de ligne de commande. Sur macOS, ouvrez Terminal.app ; sous Windows, choisissez « Exécuter » dans votre menu Démarrer et tapez « cmd.exe ».Toutes les commandes précédées d’un signe dollar '$' doivent être exécutées dans la ligne de commande.Vérifiez qu’une version actuelle de Ruby est installée :
 
 ```bash
 $ ruby --version
 ruby 2.7.0
 ```
 
-Rails requires Ruby version 2.7.0 or later. It is preferred to use latest Ruby version.
-If the version number returned is less than that number (such as 2.3.7, or 1.8.7),
-you'll need to install a fresh copy of Ruby.
+Rails nécessite Ruby version 2.7.0 ou ultérieure. Il est préférable d’utiliser la dernière version de Ruby. Si le numéro de version renvoyé est inférieur à ce numéro (par exemple, 2.3.7 ou 1.8.7), vous devez installer une nouvelle copie de Ruby.
 
-To install Rails on Windows, you'll first need to install [Ruby Installer](https://rubyinstaller.org/).
+Pour installer Rails sous Windows, vous devez d’abord installer [Ruby Installer](https://rubyinstaller.org/).
 
-For more installation methods for most Operating Systems take a look at
-[ruby-lang.org](https://www.ruby-lang.org/en/documentation/installation/).
+Pour plus de méthodes d’installation pour la plupart des systèmes d’exploitation, consultez [ruby-lang.org](https://www.ruby-lang.org/en/documentation/installation/).
 
-#### Installing SQLite3
+#### Installation de SQLite3
 
-You will also need an installation of the SQLite3 database.
-Many popular UNIX-like OSes ship with an acceptable version of SQLite3.
-Others can find installation instructions at the [SQLite3 website](https://www.sqlite.org).
+Vous aurez également besoin d’une installation de la base de données SQLite3.De nombreux systèmes d’exploitation de type UNIX populaires sont livrés avec une version acceptable de SQLite3.D’autres peuvent trouver des instructions d’installation sur le [site Web SQLite3](https://www.sqlite.org).
 
-Verify that it is correctly installed and in your load `PATH`:
+Vérifiez qu’il est correctement installé et dans votre chargement 'PATH':
 
 ```bash
 $ sqlite3 --version
 ```
 
-The program should report its version.
+Le programme doit signaler sa version.
 
-#### Installing Node.js and Yarn
+#### Installation de Node.js et Yarn
 
-Finally, you'll need Node.js and Yarn installed to manage your application's JavaScript.
+Enfin, vous aurez besoin de Node.js et Yarn installés pour gérer le JavaScript de votre application.
 
-Find the installation instructions at the [Node.js website](https://nodejs.org/en/download/) and
-verify it's installed correctly with the following command:
+Recherchez les instructions d’installation sur le site Web [Node.js](https://nodejs.org/en/download/) et vérifiez qu’il est correctement installé à l’aide de la commande suivante :
 
 ```bash
 $ node --version
 ```
 
-The version of your Node.js runtime should be printed out. Make sure it's greater
-than 8.16.0.
+La version de votre runtime Node.js doit être imprimée.Assurez-vous qu’il est supérieur à 8.16.0.
 
-To install Yarn, follow the installation
-instructions at the [Yarn website](https://classic.yarnpkg.com/en/docs/install).
+Pour installer Yarn, suivez les instructions d’installation sur le [site Web de Yarn](https://classic.yarnpkg.com/en/docs/install).
 
-Running this command should print out Yarn version:
+L’exécution de cette commande devrait imprimer la version de Yarn :
 
 ```bash
 $ yarn --version
 ```
 
-If it says something like "1.22.0", Yarn has been installed correctly.
+S’il dit quelque chose comme « 1.22.0 », Yarn a été installé correctement.
 
-#### Installing Rails
+#### Installation de Rails
 
-To install Rails, use the `gem install` command provided by RubyGems:
+Pour installer Rails, utilisez la commande 'gem install' fournie par RubyGems :
 
 ```bash
 $ gem install rails
 ```
 
-To verify that you have everything installed correctly, you should be able to
-run the following in a new terminal:
+Pour vérifier que tout est installé correctement, vous devez pouvoir exécuter les éléments suivants dans un nouveau terminal :
 
 ```bash
 $ rails --version
 ```
 
-If it says something like "Rails 7.0.0", you are ready to continue.
+S’il dit quelque chose comme « Rails 7.0.0 », vous êtes prêt à continuer.
 
-### Creating the Blog Application
+### Création de l’application de Blog
 
-Rails comes with a number of scripts called generators that are designed to make
-your development life easier by creating everything that's necessary to start
-working on a particular task. One of these is the new application generator,
-which will provide you with the foundation of a fresh Rails application so that
-you don't have to write it yourself.
+Rails est livré avec un certain nombre de scripts appelés générateurs qui sont conçus pour faciliter votre vie de développement en créant tout ce qui est nécessaire pour commencer à travailler sur une tâche particulière.L’un d’eux est le nouveau générateur d’applications, qui vous fournira la base d’une nouvelle application Rails afin que vous n’ayez pas à l’écrire vous-même.
 
-To use this generator, open a terminal, navigate to a directory where you have
-rights to create files, and run:
+Pour utiliser ce générateur, ouvrez un terminal, accédez à un répertoire dans lequel vous avez le droit de créer des fichiers et exécutez :
 
 ```bash
 $ rails new blog
 ```
 
-This will create a Rails application called Blog in a `blog` directory and
-install the gem dependencies that are already mentioned in `Gemfile` using
-`bundle install`.
+Cela créera une application Rails appelée Blog dans un répertoire 'blog' et installera les dépendances de gem qui sont déjà mentionnées dans `Gemfile` en utilisant 'bundle install'.
 
-TIP: You can see all of the command line options that the Rails application
-generator accepts by running `rails new --help`.
+TIP : Vous pouvez voir toutes les options de ligne de commande que le générateur d’applications Rails accepte en exécutant `rails new --help`.
 
-After you create the blog application, switch to its folder:
+Après avoir créé l’application de blog, basculez vers son dossier :
 
 ```bash
 $ cd blog
 ```
 
-The `blog` directory will have a number of generated files and folders that make
-up the structure of a Rails application. Most of the work in this tutorial will
-happen in the `app` folder, but here's a basic rundown on the function of each
-of the files and folders that Rails creates by default:
+Le répertoire `blog` aura un certain nombre de fichiers et de dossiers générés qui constituent la structure d’une application Rails.La majeure partie du travail dans ce didacticiel se déroulera dans le dossier `app`, mais voici un aperçu de base sur la fonction de chacun des fichiers et dossiers que Rails crée par défaut:
 
-| File/Folder | Purpose |
+| Fichier/Dossier| But |
 | ----------- | ------- |
 |app/|Contains the controllers, models, views, helpers, mailers, channels, jobs, and assets for your application. You'll focus on this folder for the remainder of this guide.|
 |bin/|Contains the `rails` script that starts your app and can contain other scripts you use to set up, update, deploy, or run your application.|
